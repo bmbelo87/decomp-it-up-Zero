@@ -632,6 +632,14 @@ static uint32_t Audio_DecryptAUD(const uint8_t* fileData, uint32_t fileSize,
         return size;
     }
     if (memcmp(fileData, "ENC1", 4) != 0) return 0;
+    {
+        /* Zero (piu 0x80a42e0): D*.AUD — Resource_DecryptENC1 confere o Adler-32
+         * e cai no ENC1 antigo abaixo se não for o formato do Zero */
+        uint32_t size = 0;
+        uint8_t* out = Resource_DecryptENC1(fileData, fileSize, &size);
+        if (out && size) { *outData = out; *outSize = size; return size; }
+        free(out);
+    }
 
     uint32_t dataSize = *(uint32_t*)(fileData + 0x84);
     uint32_t skip = *(uint32_t*)(fileData + 0x88);

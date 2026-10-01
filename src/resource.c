@@ -118,12 +118,18 @@ static void pack_decrypt(uint8_t* data, uint32_t len, const uint8_t* key16) {
     }
 }
 
-/* PIU32.EXE 0x420610: out[i] = in[i] ^ k[i&3], k[j] = (k[j] + i) ^ 0x1C.
- * Os 4 bytes iniciais de k vêm de 0x43f220 (stub de dongle, senha 0xA5A5);
- * os .AUD/.PNZ do jogo foram cifrados com resposta 0 (recuperado por texto
- * conhecido e conferido com o Adler-32 de 0x423b40). */
+/* PIU32.EXE 0x420610 / piu (Zero) 0x80a3dc0:
+ *   out[i] = in[i] ^ k[i&3], k[j] = (k[j] + i) ^ 0x1C.
+ * k = resposta do dongle para os próprios 16 bytes de entrada, em big-endian.
+ *   Exceed2: stub de dongle (0x43f220) -> resposta 0.
+ *   Zero: MicroDog 3.4, serviço Convert (0x80a6058) -> tabela em zero_dog.c.
+ * Consulta fora da tabela cai na resposta 0, o que mantém o Exceed2. */
+int ZeroDog_Convert16(const uint8_t* q, uint32_t* resp);   /* zero_dog.c */
+
 static void x2_derive_key(int n, const uint8_t* in, uint8_t* out) {
-    uint8_t k[4] = { 0, 0, 0, 0 };
+    uint32_t r = 0;
+    if (n == 16) ZeroDog_Convert16(in, &r);
+    uint8_t k[4] = { (uint8_t)(r >> 24), (uint8_t)(r >> 16), (uint8_t)(r >> 8), (uint8_t)r };
     for (int i = 0; i < n; i++) {
         out[i] = (uint8_t)(in[i] ^ k[i & 3]);
         k[i & 3] = (uint8_t)((k[i & 3] + i) ^ 0x1C);
@@ -196,7 +202,8 @@ static bool respack_load(RESArchive* res) {
     uint8_t x2G[16];
     if (isX2) x2_derive_key(16, d + 0x18, x2G);
     int n = (int)*(uint32_t*)(d + 0x0C);
-    uint32_t hdr = (*(uint32_t*)(d + 0x18) == 0) ? 0x28 : 0x18;
+    /* RESPAC2: 0x18..0x27 é a chave G, índice sempre em 0x28 (piu 0x809a050) */
+    uint32_t hdr = (isX2 || *(uint32_t*)(d + 0x18) == 0) ? 0x28 : 0x18;
     uint32_t idxSize = (uint32_t)n * RESPACK_ENTRY;
     if (n <= 0 || hdr + idxSize > res->fileSize) return false;
 
@@ -1472,9 +1479,36 @@ static uint8_t bit_reverse(uint8_t b) {
     return r;
 }
 
+/* ENC1 do Zero (piu 0x80a42e0 / 0x80a4010): hdr[0x86], tamanho = u32@0x7E ^ 0xCCBB,
+ * pula u32@0x82, u32 semente (= Adler-32 do resultado), dados;
+ * saida[i] = bitrev(src[i]) ^ T[(semente+i) & 0x3FF], T estática em 0x8103940. */
+static const uint8_t ENC1_ZERO_TABLE[1024] = {
+#include "zero_enc1_table.inc"
+};
+
+static uint8_t* enc1_zero(const uint8_t* data, uint32_t dataSize, uint32_t* outSize) {
+    uint32_t size, skip, seed;
+    memcpy(&size, data + 0x7E, 4);
+    memcpy(&skip, data + 0x82, 4);
+    size ^= 0xCCBB;
+    uint32_t off = 0x86 + skip;
+    if (off < skip || off + 4 > dataSize || size > dataSize - off - 4) return NULL;
+    memcpy(&seed, data + off, 4);
+    const uint8_t* src = data + off + 4;
+    uint8_t* out = (uint8_t*)malloc(size ? size : 1);
+    if (!out) return NULL;
+    for (uint32_t i = 0; i < size; i++)
+        out[i] = (uint8_t)(enc2_bitrev(src[i]) ^ ENC1_ZERO_TABLE[(seed + i) & 0x3FF]);
+    if (enc2_adler32(out, size) != seed) { free(out); return NULL; }
+    *outSize = size;
+    return out;
+}
+
 uint8_t* Resource_DecryptENC1(const uint8_t* data, uint32_t dataSize, uint32_t* outSize) {
     if (dataSize < 0x90 || memcmp(data, "ENC1", 4) != 0)
         return NULL;
+    uint8_t* z = enc1_zero(data, dataSize, outSize);
+    if (z) return z;
 
     uint32_t payload_size;
     uint32_t extra_skip;

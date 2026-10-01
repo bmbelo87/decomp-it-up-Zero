@@ -155,6 +155,7 @@ add_executable(Pumpy
     src/df_resource.c
     src/util.c
     src/resource.c
+    src/zero_dog.c
     src/step.c
     src/song.c
     src/zlibinflate.c
