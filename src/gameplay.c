@@ -577,7 +577,7 @@ static void exLoadSkin(void)
 /* Zero 0x8087520: corpo skinN_l2 esticado (UV inteiro) da base da cabeça ao topo
  * da ponta; ponta skinN_l3 inteira; distância < 64 -> só a parte de baixo da
  * ponta (0x809e0d0). yh/yt = centros das setas (Y para baixo). */
-static void zeroHoldDraw(int panel, int col, float left, float yh, float yt)
+static void zeroHoldDraw(int panel, int col, float left, float yh, float yt, bool held)
 {
     (void)panel;
     if (g_skinL2[col] < 0 || g_skinL3[col] < 0) return;
@@ -587,7 +587,9 @@ static void zeroHoldDraw(int panel, int col, float left, float yh, float yt)
     int bh = Texture_GetHeight(bt->texId); if (bh <= 0) bh = 256;
     int tw = Texture_GetWidth(tt->texId); if (tw <= 0) tw = 256;
     int th = Texture_GetHeight(tt->texId); if (th <= 0) th = 256;
-    float headBase = yh + 32.0f, tailTop = yt - 32.0f, tailBase = yt + 32.0f;
+    /* segurado (cabeça já passou, 0xC sozinho em 0x8087520): o corpo sai do MEIO
+     * da step zone (y = 32 da seta do receptor), não da base da cabeça */
+    float headBase = held ? yh : yh + 32.0f, tailTop = yt - 32.0f, tailBase = yt + 32.0f;
     if (tailTop > headBase) {
         Texture_DrawUV(bt->texId, left, headBase, (float)bt->srcW, tailTop - headBase,
                        bt->u1 * bw, bt->v1 * bh, bt->u2 * bw, bt->v2 * bh, 1, 1, 1, 1);
@@ -3031,7 +3033,7 @@ void Gameplay_Render(void)
                 /* ponta de um hold a partir da cabeça h: atravessa corpo e linhas
                  * vazias (apagadas ao passar), para em outra nota */
                 #define Z_TAIL(h, out) do { out = -1;                     for (int k_ = (h) + 1; k_ < rows; k_++) { uint8_t v_ = Z_PV(k_, panel);                         if (v_ == NT_HOLD_T) { out = k_; break; }                         if (v_ != NT_HOLD_B && v_ != 0) break; } } while (0)
-                #define Z_DRAW(h, t, isHeld) do {                     float yh = ((isHeld) ? (float)(receptorY + rh2 / 2) : Z_ROWY(h)) - g_skinOffY;                     float yt = Z_ROWY(t) - g_skinOffY;                     if ((isHeld) && yt < yh) yt = yh;                     zeroHoldDraw(panel, col, posX[panel] + g_skinOffX[col] + XM_DXP(panel, yh), yh, yt); } while (0)
+                #define Z_DRAW(h, t, isHeld) do {                     float yh = ((isHeld) ? (float)(receptorY + rh2 / 2) : Z_ROWY(h)) - g_skinOffY;                     float yt = Z_ROWY(t) - g_skinOffY;                     if ((isHeld) && yt < yh) yt = yh;                     zeroHoldDraw(panel, col, posX[panel] + g_skinOffX[col] + XM_DXP(panel, yh), yh, yt, (isHeld)); } while (0)
                 int lastTail = -1;
                 /* 1) hold segurado: cabeça no receptor (a linha dela já foi apagada) */
                 int held = g_holdRows[p][panel];
