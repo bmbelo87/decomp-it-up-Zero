@@ -11,6 +11,14 @@ void Game_ResetAllCheats(void);
 
 #define MAX_PANELS 10
 #define PANEL_SIZE 30
+/* Zero (piu 0x8083070 / 0x807eb20): setas 64x64, colunas de 49 px a partir de
+ * x = 28 + 2 (P1), 348 + 2 (P2), 65 + 2 / 312 + 2 (Double), topo da seta em
+ * y = 33 (378 + 5 no sistema Y para cima) -> centro 65. Receptor (01/02.spr)
+ * deslocado (32, 42) da posição do .spr (0x807e820); W01/W02 em (70, 42). */
+#define ZERO_RECEPTOR_Y 65
+#define ZERO_ARROW_W    64
+#define ZERO_COL_STEP   49.0f
+#define ZERO_REC_DY     42.0f
 #define P1_CENTER_X 160
 #define P2_CENTER_X 480
 
@@ -494,6 +502,7 @@ static int g_exJudgeBga = -1;   /* índice em g_game.bgaPics do 00.BGA, -1 = sem
  * hold, skinN_l2 = corpo, skinN_l3 = ponta. Ajuste em X por skin e painel em
  * [0x46AFF0..0x46B000], aplicado em 0x406AEC (índice = painel). -1 = sem skin:
  * volta para o ARROW54X / ARROWETC do 00.DAT. */
+static bool  g_zeroSkinArrows;   /* ARROW54x apontando para a skin (Zero) */
 static int   g_skinTap[5] = { -1, -1, -1, -1, -1 };
 static int   g_skinL1[5]  = { -1, -1, -1, -1, -1 };
 static int   g_skinL2[5]  = { -1, -1, -1, -1, -1 };
@@ -503,13 +512,15 @@ static float g_skinOffX[5];
 static void exLoadSkin(void)
 {
     static const float k_off[3][5] = {
+        /* Zero 0x8080a40..: [0x08628248..58] = 2, 0, -2, -1, -3 (SKIN00);
+         * a ordem dos painéis desses cinco ainda não foi confirmada. */
         { 2.0f, 1.0f, 0.0f, 0.0f, 0.0f },    /* SKIN00: 0x4044D4 (2, 1, 0, 0, 0) */
         { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f },    /* SKIN01: 0x4044AF */
         { 3.0f, 3.0f, 1.0f, -3.0f, -3.0f },  /* SKIN02: 0x4043C0 */
     };
     for (int k = 0; k < 5; k++) g_skinTap[k] = g_skinL1[k] = g_skinL2[k] = g_skinL3[k] = -1;
-    unsigned fl = ExSelect_GetFlags();
-    int sk = (fl & 0x10000u) ? 2 : (fl & 0x20000u) ? 1 : 0;
+    /* Exceed2: unsigned fl = ExSelect_GetFlags(); sk = 0x10000 ? 2 : 0x20000 ? 1 : 0 */
+    int sk = Zero_SkinIndex();
     char path[MAX_PATH];
     snprintf(path, sizeof(path), "%s/BGA/SKIN%02d.DAT", g_game.currentDirectory, sk);
     if (!RES_Open(path)) { Log_Print("GP: skin '%s' não abriu\n", path); return; }
@@ -523,7 +534,7 @@ static void exLoadSkin(void)
             SPR_LoadSPR(nm, NULL, NULL, NULL);
             *dst[j] = (g_game.sprTileCount > start) ? start : -1;
         }
-        g_skinOffX[k] = k_off[sk][k];
+        g_skinOffX[k] = (sk < 3) ? k_off[sk][k] : 0.0f;
     }
     RES_Close();
     Log_Print("GP: skin SKIN%02d carregada (nota DL=%d)\n", sk, g_skinTap[0]);
@@ -899,7 +910,7 @@ static void clearDNPanel(StepRow* row, int pan)
 
 // Processa o julgamento final de uma linha
 static void processRowJudgment(int player, int row, JudgeType jt) {
-    int receptorY = 38;
+    int receptorY = ZERO_RECEPTOR_Y; /* era 38 (Exceed) */
     bool hdCheck = isHDMode();
     bool dnJdg = isDNMode();
     int jdPanels = hdCheck ? 6 : (dnJdg ? 10 : 5);
@@ -1320,7 +1331,7 @@ static void processInput(int player)
                     g_judgeDisplayTimer[player] = 0.6f;
                     g_judgeFrame[player] = 25; g_exJudgeCnt[player] = 0; /* PUMPY.EXE 0x40dd9a: 25 p/ todos (40 so nos tipos 6/7). Era: (pjt == JT_GREAT || pjt == JT_PERFECT) ? 40 : 25 */
                     { int sc = 0, cb = g_game.stats.combo[player];
-                      int receptorY = 38;
+                      int receptorY = ZERO_RECEPTOR_Y; /* era 38 (Exceed) */
                       switch (pjt) {
                         case JT_PERFECT: sc = 1000; if (cb > 3) sc += 1000; cb++; break;
                         case JT_GREAT:   sc = 500;  if (cb > 3) sc += 1000; cb++; break;
@@ -1384,7 +1395,7 @@ static void processInput(int player)
         g_judgeDisplayTimer[player] = 0.6f;
         g_judgeFrame[player] = 25; g_exJudgeCnt[player] = 0; /* PUMPY.EXE 0x40dd9a: 25 p/ todos (40 so nos tipos 6/7). Era: (jt == JT_GREAT || jt == JT_PERFECT) ? 40 : 25 */
         { int sc = 0, cb = g_game.stats.combo[player];
-          int receptorY = 38;
+          int receptorY = ZERO_RECEPTOR_Y; /* era 38 (Exceed) */
           switch (jt) {
             case JT_PERFECT: sc = 1000; if (cb > 3) sc += 1000; cb++; break;
             case JT_GREAT:   sc = 500;  if (cb > 3) sc += 1000; cb++; break;
@@ -1786,17 +1797,47 @@ void Gameplay_Start(int songId)
     Log_Print("GP: initialized\n");
 
     // Igual Font_LoadFontAndArrows no Ghidra — carrega font.tga, dec00.tga e todos os SPRs da 00.DAT
+    /* Zero (piu 0x80806f0): receptores (01/02, w01/w02, hd01/hd02), arrowf/arrowp,
+     * faíscas e a lifebar (gg_s/gg_d + GG.png) vêm do BGA/SKINxx.DAT da skin do
+     * jogador; o 00.DAT do Zero só tem m01..m05. */
     {
         char datPath[MAX_PATH];
-        snprintf(datPath, sizeof(datPath), "%s/BGA/00.DAT", g_game.currentDirectory);
+        snprintf(datPath, sizeof(datPath), "%s/BGA/SKIN%02d.DAT", g_game.currentDirectory, Zero_SkinIndex());
         Resource_LoadFontAndArrows(datPath);
+        /* era (Prex3/Exceed): "%s/BGA/00.DAT" */
+        /* 0x80860d1: m01..m04 (indicador de estágio) do BGA/00.DAT */
+        snprintf(datPath, sizeof(datPath), "%s/BGA/00.DAT", g_game.currentDirectory);
+        if (RES_Open(datPath)) {
+            int* const mv[5] = { &g_fontSprM01, &g_fontSprM02, &g_fontSprM03, &g_fontSprM04, &g_fontSprM05 };
+            for (int i = 0; i < 5; i++) {
+                char nm[16];
+                snprintf(nm, sizeof(nm), "m%02d.spr", i + 1);
+                int start = g_game.sprTileCount;
+                SPR_LoadSPR(nm, NULL, NULL, NULL);
+                *mv[i] = (g_game.sprTileCount > start) ? start : -1;
+            }
+            RES_Close();
+        }
     }
     /* Exceed2 0x405960: BGA/00.DAT também é carregado como BGA ([0x484FD8]);
      * julgamento/combo são cenas dele. Fica como mais um BGA depois do da música. */
     g_exJudgeBga = -1;
     memset(g_exJudgeCnt, 0, sizeof(g_exJudgeCnt));
     if (g_exceedSongIds) exLoadSkin();   /* Exceed2 0x404350: SKIN0X.DAT */
-    if (g_exceedSongIds && Resource_LoadBGAByName("00")) {
+    /* Zero: a nota é o próprio skinN.spr do SKINxx.DAT (não há ARROW54x);
+     * grupo 0..4 = 542, 541, 545, 543, 544 no código herdado. */
+    g_zeroSkinArrows = false;
+    if (g_skinTap[0] >= 0) {
+        g_fontArrow542 = g_skinTap[0];
+        g_fontArrow541 = g_skinTap[1];
+        g_fontArrow545 = g_skinTap[2];
+        g_fontArrow543 = g_skinTap[3];
+        g_fontArrow544 = g_skinTap[4];
+        g_zeroSkinArrows = true;
+    }
+    /* Zero 0x8080953: julgamento/combo em BGA/COMBO.DAT (mesmas cenas e slots
+     * do 00.BGA do Exceed2: PERFECT.., PER-2P.., PER-D.., dígitos 10..13 <- 14..23) */
+    if (g_exceedSongIds && Resource_LoadBGAByName("COMBO")) {
         int bi = g_game.bgaPicCount - 1;
         if (g_game.bgaPics[bi].version == 3 && g_game.bgaPics[bi].sceneCount > 0) g_exJudgeBga = bi;
         Log_Print("GP: 00.BGA como BGA %d (v%d, %d cenas)\n", bi, g_game.bgaPics[bi].version, g_game.bgaPics[bi].sceneCount);
@@ -2412,7 +2453,7 @@ void Gameplay_Render(void)
         return;
     }
 
-    int receptorY = 38;
+    int receptorY = ZERO_RECEPTOR_Y; /* era 38 (Exceed) */
     bool isHalfDouble = (g_game.selectedModeIndex >= 0 && g_game.selectedModeIndex < g_game.songDB.modeCount &&
                          strcmp(g_game.songDB.modes[g_game.selectedModeIndex].name, "HALFDOUBLE") == 0);
     bool isDoubleOrNightmare = (g_game.selectedModeIndex >= 0 && g_game.selectedModeIndex < g_game.songDB.modeCount &&
@@ -2529,23 +2570,25 @@ void Gameplay_Render(void)
             centerX = 320;
         } else if (isDoubleOrNightmare) {
             panelCount = 10;
-            for (int i = 0; i < 10; i++) pW[i] = 54;
-            for (int i = 0; i < 5; i++) posX[i] = 74.0f + i * 48.0f;
-            for (int i = 5; i < 10; i++) posX[i] = 323.0f + (i-5) * 48.0f;
+            /* Exceed: pW 54, posX 74 + 48i / 323 + 48(i-5) */
+            for (int i = 0; i < 10; i++) pW[i] = ZERO_ARROW_W;
+            for (int i = 0; i < 5; i++) posX[i] = 67.0f + i * ZERO_COL_STEP;
+            for (int i = 5; i < 10; i++) posX[i] = 314.0f + (i-5) * ZERO_COL_STEP;
             centerX = 320;
         } else {
             panelCount = 5;
-            for (int i = 0; i < 5; i++) pW[i] = 54;
+            for (int i = 0; i < 5; i++) pW[i] = ZERO_ARROW_W;   /* Exceed: 54 */
             if (p == 1) {
                 /* P2 (sozinho ou com P1): lado direito, espelhado de P1.
                  * P1 centro=161, P2 centro=479 (simetrico em 640px).
                  * P2[0]=356, ..., P2[4]=548. Gap entre P1(284) e P2(356) = 72px. */
-                for (int i = 0; i < 5; i++) posX[i] = 358.0f + i * 48.0f;
+                /* Exceed: 358 + 48i */
+                for (int i = 0; i < 5; i++) posX[i] = 350.0f + i * ZERO_COL_STEP;
                 centerX = P2_CENTER_X;
             } else {
                 /* P1 (sozinho ou com P2): posição padrão esquerda (mesma do solo) */
-                posX[0] = 38.0f;
-                for (int i = 1; i < 5; i++) posX[i] = 38.0f + i * 48.0f;
+                /* Exceed: 38 + 48i */
+                for (int i = 0; i < 5; i++) posX[i] = 30.0f + i * ZERO_COL_STEP;
                 centerX = P1_CENTER_X;
             }
         }
@@ -2623,13 +2666,15 @@ void Gameplay_Render(void)
         // Freedom: oculta o receptor completamente (sprites não são desenhados)
         // Para single (não HD/DN): srcX baked para P1-solo (base=38). Offset por player.
         {
-            float recOffX = (isHalfDouble || isDoubleOrNightmare) ? 0.0f : (posX[0] - 38.0f);
+            /* Exceed: recOffX = (HD/DN) ? 0 : posX[0] - 38, sem deslocamento em Y */
+            float recOffX = isHalfDouble ? 0.0f : isDoubleOrNightmare ? 70.0f : (posX[0] - 30.0f + 32.0f);
+            float recOffY = isHalfDouble ? 0.0f : ZERO_REC_DY;
             if (sprReceptor >= 0 && !g_game.cmdFreedom[p]) {
                 int cnt = sprTileCount(sprReceptor);
                 for (int t = cnt - 1; t >= 0; t--) {
                     int idx = sprReceptor + t;
                     float sx = (float)g_game.sprTiles[idx].srcX + recOffX;
-                    float sy = (float)g_game.sprTiles[idx].srcY;
+                    float sy = (float)g_game.sprTiles[idx].srcY + recOffY;
                     float sw = (float)g_game.sprTiles[idx].srcW;
                     float sh = (float)g_game.sprTiles[idx].srcH;
                     Sprite_DrawTileUV(idx, sx + sw / 2.0f, sy + sh / 2.0f, sw, sh, 1.0f);
@@ -2644,7 +2689,7 @@ void Gameplay_Render(void)
                 for (int t = cnt - 1; t >= 0; t--) {
                     int idx = sprBrilho + t;
                     float sx = (float)g_game.sprTiles[idx].srcX + recOffX;
-                    float sy = (float)g_game.sprTiles[idx].srcY;
+                    float sy = (float)g_game.sprTiles[idx].srcY + recOffY;
                     float sw = (float)g_game.sprTiles[idx].srcW;
                     float sh = (float)g_game.sprTiles[idx].srcH;
                     Sprite_DrawTileUV(idx, sx + sw / 2.0f, sy + sh / 2.0f, sw, sh, blindA);
@@ -3059,12 +3104,12 @@ void Gameplay_Render(void)
         #undef XM_S
 
         int centerY = g_game.screenHeight / 2;
-    int receptorY = 38; // Same as in rendering loop
+    int receptorY = ZERO_RECEPTOR_Y; /* era 38 (Exceed) */ // Same as in rendering loop
 
 
         /* Mode/Modifier sprites do ARROW541.SP2 — idêntico ao song_select.
          * P1 → lado esquerdo, P2 → lado direito (usa `p` da iteração atual). */
-        if (g_fontArrow541 >= 0) {
+        if (g_fontArrow541 >= 0 && !g_zeroSkinArrows) {   /* ícones do ARROW541 (Prex3); Zero: MICON.DAT */
             bool hudRight = (p == 1); /* P2 sempre vai pra direita */
             const char* modeName = (g_game.selectedModeIndex >= 0 && g_game.selectedModeIndex < g_game.songDB.modeCount) ? g_game.songDB.modes[g_game.selectedModeIndex].name : "EASY";
             int modeOff = 31; /* modeez (default) */

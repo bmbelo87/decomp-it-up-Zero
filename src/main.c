@@ -520,17 +520,22 @@ void Game_Update(float dt) {
                 Game_ResetAllCheats();
                 Movie_Close();
                 char path[MAX_PATH];
-                snprintf(path, sizeof(path), "%s/BGA/SB.MOV", g_game.currentDirectory);
+                /* Zero CStageBreak (piu 0x8077757): BGA/STAGEBREAK.MOV */
+                snprintf(path, sizeof(path), "%s/BGA/STAGEBREAK.MOV", g_game.currentDirectory);
+                /* era (Exceed): "%s/BGA/SB.MOV" */
                 if (!Movie_Open(path, false)) {
                     Log_Print("SB: '%s' não abriu\n", path);
                     /* Game_ChangeState(STATE_GAMEOVER_ENTER); */
                     Attract_Idle();     /* 0x4152E0: "IDLE" */
                     break;
                 }
-                if (g_waveSoundIds[SND_GAMESTOP] >= 0) {
-                    Audio_Stop(g_waveSoundIds[SND_GAMESTOP]);
-                    Audio_Play(g_waveSoundIds[SND_GAMESTOP], false);
+                /* Zero 0x80776b0: WAVE/STAGEBREAK.WAV (o GAMESTOP.WAV do Exceed não existe) */
+                {
+                    static int s_sndSB = -1;
+                    if (s_sndSB < 0) s_sndSB = Audio_LoadWaveFile("STAGEBREAK.WAV");
+                    if (s_sndSB >= 0) { Audio_Stop(s_sndSB); Audio_Play(s_sndSB, false); }
                 }
+                /* era (Exceed): g_waveSoundIds[SND_GAMESTOP] */
                 sbStart = timeGetTime();
             }
             Movie_Update(dt);

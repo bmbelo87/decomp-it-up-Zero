@@ -709,6 +709,7 @@ extern bool g_exceedSongIds;
 const char* Song_IdStr(int id);
 int Song_DataId(int id);            /* Zero: a própria (STX/TITLE); ver Song_FindFile para AUD/MOV/DAT */
 bool ExSelect_StartZero(int id, int diff, unsigned joined, const int speed[2], const bool rv[2]);
+int  Zero_SkinIndex(void);           /* zero_select.c: skin de notas (SKIN00..07) */
 void ZeroSelect_Enter(void);          /* zero_select.c — CSelect do Zero */
 void ZeroSelect_Update(float dt);
 void ZeroSelect_Render(void);

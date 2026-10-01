@@ -239,6 +239,11 @@ static const ZeroCode k_codes[18] = {
     { 6, { ZB_DL, ZB_DR, ZB_DL, ZB_DR, ZB_DL, ZB_DR } },                      /* 17 limpa */
 };
 
+/* [obj 0x98c]+0x5C/+0x90: skin escolhida pelos códigos 0..4 (travados no INI);
+ * sem desbloqueio fica a 0 (BGA/SKIN00.DAT, 0x8080a1f) */
+static int s_skin = 0;
+int Zero_SkinIndex(void) { return s_skin; }
+
 static bool twoPlayers(void) { return (s_joined & 3) == 3; }
 
 static const ExceedSong* curSong(void) {

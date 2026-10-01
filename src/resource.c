@@ -1855,20 +1855,28 @@ void Resource_LoadFontAndArrows(const char* datPath) {
 
     g_fontArrow541 = g_game.sprTileCount;
     SPR_LoadSP2("arrow541.sp2", NULL, NULL, NULL);
+
+    if (g_game.sprTileCount == g_fontArrow541) g_fontArrow541 = -1;   /* Zero: sem o .spr não aponta para o próximo */
     Log_Print("DEBUG: Before ARROW542 load: sprTileCount=%d\n", g_game.sprTileCount);
     g_fontArrow542 = g_game.sprTileCount;
     SPR_LoadSP2("arrow542.sp2", NULL, NULL, NULL);
+    if (g_game.sprTileCount == g_fontArrow542) g_fontArrow542 = -1;   /* Zero: sem o .spr não aponta para o próximo */
     Log_Print("DEBUG: After ARROW542 load: sprTileCount=%d, g_fontArrow542=%d\n", g_game.sprTileCount, g_fontArrow542);
     g_fontArrow543 = g_game.sprTileCount;
     SPR_LoadSP2("arrow543.sp2", NULL, NULL, NULL);
+    if (g_game.sprTileCount == g_fontArrow543) g_fontArrow543 = -1;   /* Zero: sem o .spr não aponta para o próximo */
     g_fontArrow544 = g_game.sprTileCount;
     SPR_LoadSP2("arrow544.sp2", NULL, NULL, NULL);
+    if (g_game.sprTileCount == g_fontArrow544) g_fontArrow544 = -1;   /* Zero: sem o .spr não aponta para o próximo */
     g_fontArrow545 = g_game.sprTileCount;
     SPR_LoadSP2("arrow545.sp2", NULL, NULL, NULL);
+    if (g_game.sprTileCount == g_fontArrow545) g_fontArrow545 = -1;   /* Zero: sem o .spr não aponta para o próximo */
     g_fontArrowETC = g_game.sprTileCount;
     SPR_LoadSP2("arrowETC.sp2", NULL, NULL, NULL);
+    if (g_game.sprTileCount == g_fontArrowETC) g_fontArrowETC = -1;   /* Zero: sem o .spr não aponta para o próximo */
     g_fontArrowF = g_game.sprTileCount;
     SPR_LoadSPR("arrowf.spr", NULL, NULL, NULL);
+    if (g_game.sprTileCount == g_fontArrowF) g_fontArrowF = -1;   /* Zero: sem o .spr não aponta para o próximo */
     /* Exceed2 0x405A16: spark.spr */
     g_fontSpark = g_game.sprTileCount;
     SPR_LoadSPR("spark.spr", NULL, NULL, NULL);
@@ -1876,46 +1884,68 @@ void Resource_LoadFontAndArrows(const char* datPath) {
 
     g_fontSpr01 = g_game.sprTileCount;
     SPR_LoadSPR("01.spr", NULL, NULL, NULL);
+
+    if (g_game.sprTileCount == g_fontSpr01) g_fontSpr01 = -1;   /* Zero: sem o .spr não aponta para o próximo */
     g_fontSpr02 = g_game.sprTileCount;
     SPR_LoadSPR("02.spr", NULL, NULL, NULL);
+    if (g_game.sprTileCount == g_fontSpr02) g_fontSpr02 = -1;   /* Zero: sem o .spr não aponta para o próximo */
     g_fontSprW01 = g_game.sprTileCount;
     SPR_LoadSPR("w01.spr", NULL, NULL, NULL);
+    if (g_game.sprTileCount == g_fontSprW01) g_fontSprW01 = -1;   /* Zero: sem o .spr não aponta para o próximo */
     g_fontSprW02 = g_game.sprTileCount;
     SPR_LoadSPR("w02.spr", NULL, NULL, NULL);
+    if (g_game.sprTileCount == g_fontSprW02) g_fontSprW02 = -1;   /* Zero: sem o .spr não aponta para o próximo */
     g_fontSpr03 = g_game.sprTileCount;
     SPR_LoadSPR("03.spr", NULL, NULL, NULL);
+    if (g_game.sprTileCount == g_fontSpr03) g_fontSpr03 = -1;   /* Zero: sem o .spr não aponta para o próximo */
     g_fontSpr04 = g_game.sprTileCount;
     SPR_LoadSPR("04.spr", NULL, NULL, NULL);
+    if (g_game.sprTileCount == g_fontSpr04) g_fontSpr04 = -1;   /* Zero: sem o .spr não aponta para o próximo */
     g_fontSprW03 = g_game.sprTileCount;
     SPR_LoadSPR("w03.spr", NULL, NULL, NULL);
+    if (g_game.sprTileCount == g_fontSprW03) g_fontSprW03 = -1;   /* Zero: sem o .spr não aponta para o próximo */
     g_fontSprW04 = g_game.sprTileCount;
     SPR_LoadSPR("w04.spr", NULL, NULL, NULL);
+    if (g_game.sprTileCount == g_fontSprW04) g_fontSprW04 = -1;   /* Zero: sem o .spr não aponta para o próximo */
     g_fontSpr05 = g_game.sprTileCount;
     SPR_LoadSPR("05.spr", NULL, NULL, NULL);
+    if (g_game.sprTileCount == g_fontSpr05) g_fontSpr05 = -1;   /* Zero: sem o .spr não aponta para o próximo */
     g_fontSprW05 = g_game.sprTileCount;
     SPR_LoadSPR("w05.spr", NULL, NULL, NULL);
+    if (g_game.sprTileCount == g_fontSprW05) g_fontSprW05 = -1;   /* Zero: sem o .spr não aponta para o próximo */
     g_fontSprM01 = g_game.sprTileCount;
     SPR_LoadSPR("m01.spr", NULL, NULL, NULL);
+    if (g_game.sprTileCount == g_fontSprM01) g_fontSprM01 = -1;   /* Zero: sem o .spr não aponta para o próximo */
     g_fontSprM02 = g_game.sprTileCount;
     SPR_LoadSPR("m02.spr", NULL, NULL, NULL);
+    if (g_game.sprTileCount == g_fontSprM02) g_fontSprM02 = -1;   /* Zero: sem o .spr não aponta para o próximo */
     g_fontSprM03 = g_game.sprTileCount;
     SPR_LoadSPR("m03.spr", NULL, NULL, NULL);
+    if (g_game.sprTileCount == g_fontSprM03) g_fontSprM03 = -1;   /* Zero: sem o .spr não aponta para o próximo */
     g_fontSprM04 = g_game.sprTileCount;
     SPR_LoadSPR("m04.spr", NULL, NULL, NULL);
+    if (g_game.sprTileCount == g_fontSprM04) g_fontSprM04 = -1;   /* Zero: sem o .spr não aponta para o próximo */
     g_fontSprM05 = g_game.sprTileCount;
     SPR_LoadSPR("m05.spr", NULL, NULL, NULL);
+    if (g_game.sprTileCount == g_fontSprM05) g_fontSprM05 = -1;   /* Zero: sem o .spr não aponta para o próximo */
     g_fontSprHD01 = g_game.sprTileCount;
     SPR_LoadSPR("HD01.SPR", NULL, NULL, NULL);
+    if (g_game.sprTileCount == g_fontSprHD01) g_fontSprHD01 = -1;   /* Zero: sem o .spr não aponta para o próximo */
     g_fontSprHD02 = g_game.sprTileCount;
     SPR_LoadSPR("HD02.SPR", NULL, NULL, NULL);
+    if (g_game.sprTileCount == g_fontSprHD02) g_fontSprHD02 = -1;   /* Zero: sem o .spr não aponta para o próximo */
     g_fontSprHD03 = g_game.sprTileCount;
     SPR_LoadSPR("HD03.SPR", NULL, NULL, NULL);
+    if (g_game.sprTileCount == g_fontSprHD03) g_fontSprHD03 = -1;   /* Zero: sem o .spr não aponta para o próximo */
     g_fontSprHD05 = g_game.sprTileCount;
     SPR_LoadSPR("HD05.SPR", NULL, NULL, NULL);
+    if (g_game.sprTileCount == g_fontSprHD05) g_fontSprHD05 = -1;   /* Zero: sem o .spr não aponta para o próximo */
     g_fontSprBT01 = g_game.sprTileCount;
     SPR_LoadSPR("BT_MC01.SPR", NULL, NULL, NULL);
+    if (g_game.sprTileCount == g_fontSprBT01) g_fontSprBT01 = -1;   /* Zero: sem o .spr não aponta para o próximo */
     g_fontSprBT02 = g_game.sprTileCount;
     SPR_LoadSPR("BT_MC02.SPR", NULL, NULL, NULL);
+    if (g_game.sprTileCount == g_fontSprBT02) g_fontSprBT02 = -1;   /* Zero: sem o .spr não aponta para o próximo */
     /* Exceed (exceed.exe 0x404651/0x404661): lifebar em gg_s.spr e gg_d.spr.
      * Não existem no 00.DAT do Prex3: sem tiles, o índice fica -1. */
     g_fontSprGGS = g_game.sprTileCount;
