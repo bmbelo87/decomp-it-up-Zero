@@ -60,6 +60,24 @@ if(OpenGL_FOUND AND TARGET OpenGL::GL AND TARGET OpenGL::GLU)
     set(_have_gl TRUE)
 endif()
 
+# libmpeg2 (vcpkg: libmpeg2) — substitui o MPEG2.dll de 32 bits do jogo no build x64
+find_path(MPEG2_INCLUDE_DIR mpeg2dec/mpeg2.h)
+if(MPEG2_INCLUDE_DIR)
+    get_filename_component(_mpeg2_root "${MPEG2_INCLUDE_DIR}" DIRECTORY)
+    find_library(MPEG2_LIBRARY NAMES mpeg2 libmpeg2 HINTS "${_mpeg2_root}/lib" NO_CMAKE_PATH)
+    find_library(MPEG2_LIBRARY_DEBUG NAMES mpeg2 libmpeg2 HINTS "${_mpeg2_root}/debug/lib" NO_DEFAULT_PATH)
+endif()
+if(MPEG2_INCLUDE_DIR AND MPEG2_LIBRARY)
+    target_include_directories(pumpy_deps INTERFACE ${MPEG2_INCLUDE_DIR})
+    if(MPEG2_LIBRARY_DEBUG)
+        target_link_libraries(pumpy_deps INTERFACE $<$<CONFIG:Debug>:${MPEG2_LIBRARY_DEBUG}> $<$<NOT:$<CONFIG:Debug>>:${MPEG2_LIBRARY}>)
+    else()
+        target_link_libraries(pumpy_deps INTERFACE ${MPEG2_LIBRARY})
+    endif()
+    target_compile_definitions(pumpy_deps INTERFACE PUMPY_LIBMPEG2=1)
+    message(STATUS "libmpeg2: ${MPEG2_LIBRARY}")
+endif()
+
 set(_have_zlib FALSE)
 if(TARGET ZLIB::ZLIB)
     target_link_libraries(pumpy_deps INTERFACE ZLIB::ZLIB)
@@ -135,7 +153,8 @@ add_executable(Pumpy
     src/station.c
     src/eeprom_x2.c
     # src/exceed_songs.c   (Exceed: tabelas do exceed.exe)
-    src/exceed2_songs.c
+    # src/exceed2_songs.c   # Exceed2 — desativado
+    src/zero_songs.c
     src/service_menu.c
     src/coin.c
     src/debug_console.c

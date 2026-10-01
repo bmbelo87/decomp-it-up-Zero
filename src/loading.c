@@ -33,7 +33,10 @@ void Loading_Enter(int songId) {
     Resource_ClearBGA();
 
     char path[MAX_PATH];
-    snprintf(path, sizeof(path), "%s/TITLE/T%s.pnz", g_game.currentDirectory, Song_DataIdStr(songId));
+    /* Zero (piu 0x8081594 / 0x80825ad): TITLE/T%sH.PNZ (coreano) ou T%sE.PNZ,
+     * sempre com o id da própria música. Idioma ainda fixo em inglês (E). */
+    snprintf(path, sizeof(path), "%s/TITLE/T%sE.PNZ", g_game.currentDirectory, Song_IdStr(songId));
+    /* era (Exceed2): "%s/TITLE/T%s.pnz" com Song_DataIdStr(songId) */
     Log_Print("Loading: loading PNZ '%s'\n", path);
 
     g_pnzTexId = Resource_LoadPNZ(path);
@@ -76,24 +79,32 @@ void Loading_Update(float dt) {
             /* exceed.exe 0x402243: testa BGA\%s.MOV (0x4254E4 = fopen "rb");
              * se existe, 0x4229C8(path, 0) sem loop e [+0x17C2C] = 2 (0x402688);
              * senão BGA\%s.DAT. O vídeo é aberto junto com a música, abaixo. */
+            /* Zero, CPlayEngine::Run: BGA/%X.DAT (id, depois base: 0x80809a6..0x8080a2a)
+             * tem prioridade; sem ele, BGA/%X.MOV (id, depois base: 0x8081c63..)
+             * e, por fim, BGA/000.MOV em loop (0x8081d11). */
             char movPath[MAX_PATH];
-            snprintf(movPath, sizeof(movPath), "%s/BGA/%s.MOV", g_game.currentDirectory, Song_DataIdStr(g_loadingSongId));
-            Movie_Close();
-            FILE* mf = fopen(movPath, "rb");
-            bool useMov = (mf != NULL);
-            if (mf) fclose(mf);
-
             char bgaPath[MAX_PATH];
-            snprintf(bgaPath, sizeof(bgaPath), "%s/BGA/%s.DAT", g_game.currentDirectory, Song_DataIdStr(g_loadingSongId));
-            if (!useMov) {
+            Movie_Close();
+            bool useDat = Song_FindFile(g_loadingSongId, "%s/BGA/%s.DAT", false, bgaPath, sizeof(bgaPath));
+            bool useMov = false, movLoop = false;
+            if (useDat) {
                 Log_Print("Loading: loading BGA '%s'\n", bgaPath);
                 Resource_LoadBGADirect(bgaPath);
+            } else {
+                useMov = Song_FindFile(g_loadingSongId, "%s/BGA/%s.MOV", false, movPath, sizeof(movPath));
+                if (!useMov) {
+                    snprintf(movPath, sizeof(movPath), "%s/BGA/000.MOV", g_game.currentDirectory);
+                    FILE* mf = fopen(movPath, "rb");
+                    useMov = movLoop = (mf != NULL);
+                    if (mf) fclose(mf);
+                }
             }
             g_game.bgaLoop = false;
             BGA_Reset();
 
             char audioPath[MAX_PATH];
-            snprintf(audioPath, sizeof(audioPath), "%s/AUDIO/%s.AUD", g_game.currentDirectory, Song_IdStr(g_loadingSongId));
+            /* Zero 0x8081d74: AUDIO/%03X.AUD, id e depois base (Another usa a da base) */
+            Song_FindFile(g_loadingSongId, "%s/AUDIO/%s.AUD", true, audioPath, sizeof(audioPath));
             Log_Print("Loading: loading AUD '%s'\n", audioPath);
             bool audOk = BGM_LoadAUDDirect(audioPath);
 
@@ -110,7 +121,7 @@ void Loading_Update(float dt) {
 
             if (useMov) {
                 Log_Print("Loading: loading MOV '%s'\n", movPath);
-                Movie_Open(movPath, false);
+                Movie_Open(movPath, movLoop);
             }
             if (audOk && !(g_exDemo && !Demo_SoundOn()))   /* 0x40236A */
                 BGM_Play(false);

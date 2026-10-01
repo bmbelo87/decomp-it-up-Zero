@@ -76,6 +76,59 @@ static uint8_t bitrev8(uint8_t b) {                                /* 0x4223C4 *
     return r;
 }
 
+#ifdef PUMPY_LIBMPEG2
+/* Build x64: o MPEG2.dll dos jogos é i386 e não carrega num processo de 64
+ * bits. Usa a libmpeg2 (mesma API) linkada estaticamente; ela não traz a
+ * libmpeg2convert, então o quadro sai em YUV 4:2:0 e é convertido para RGB565
+ * aqui (mesmo formato final do mpeg2convert_rgb16 do original). */
+#include <mpeg2dec/mpeg2.h>
+static uint16_t* g_rgb16;
+static size_t    g_rgb16Size;
+
+static void movie_yuv_to_rgb565(const mp2_fbuf* fb, const mp2_sequence* sq) {
+    unsigned w = sq->width, h = sq->height;
+    size_t need = (size_t)w * h;
+    if (need > g_rgb16Size) {
+        uint16_t* p = (uint16_t*)realloc(g_rgb16, need * sizeof(uint16_t));
+        if (!p) return;
+        g_rgb16 = p; g_rgb16Size = need;
+    }
+    unsigned cw = sq->chroma_width, ch = sq->chroma_height;
+    unsigned sx = cw ? w / cw : 2, sy = ch ? h / ch : 2;
+    if (!sx) sx = 1;
+    if (!sy) sy = 1;
+    for (unsigned y = 0; y < h; y++) {
+        const uint8_t* Y = fb->buf[0] + (size_t)y * w;
+        const uint8_t* U = fb->buf[1] + (size_t)(y / sy) * cw;
+        const uint8_t* V = fb->buf[2] + (size_t)(y / sy) * cw;
+        uint16_t* out = g_rgb16 + (size_t)y * w;
+        for (unsigned x = 0; x < w; x++) {
+            /* ITU-R BT.601, faixa 16..235 (a mesma da libmpeg2convert) */
+            int c = ((int)Y[x] - 16) * 298;
+            int d = (int)U[x / sx] - 128, e = (int)V[x / sx] - 128;
+            int r = (c + 409 * e + 128) >> 8;
+            int g = (c - 100 * d - 208 * e + 128) >> 8;
+            int b = (c + 516 * d + 128) >> 8;
+            r = r < 0 ? 0 : r > 255 ? 255 : r;
+            g = g < 0 ? 0 : g > 255 ? 255 : g;
+            b = b < 0 ? 0 : b > 255 ? 255 : b;
+            out[x] = (uint16_t)(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+        }
+    }
+}
+
+static bool movie_load_dll(void) {
+    if (p_init) return true;
+    p_init    = (fn_init)   (void*)mpeg2_init;
+    p_close   = (fn_close)  (void*)mpeg2_close;
+    p_info    = (fn_info)   (void*)mpeg2_info;
+    p_parse   = (fn_parse)  (void*)mpeg2_parse;
+    p_buffer  = (fn_buffer) (void*)mpeg2_buffer;
+    p_convert = NULL;   /* sem libmpeg2convert: conversão em movie_upload */
+    p_rgb16   = NULL;
+    return true;
+}
+#else
 static bool movie_load_dll(void) {
     if (g_mpegDll) return true;
     char path[MAX_PATH];
@@ -96,6 +149,7 @@ static bool movie_load_dll(void) {
     }
     return true;
 }
+#endif
 
 /* 0x4226D8: fps pelo frame_rate_code do sequence header */
 static double movie_fps(const uint8_t* s) {
@@ -203,8 +257,14 @@ static void movie_upload(void) {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
     }
+    const void* pixels = fb->buf[0];
+#ifdef PUMPY_LIBMPEG2
+    movie_yuv_to_rgb565(fb, sq);
+    if (!g_rgb16) return;
+    pixels = g_rgb16;
+#endif
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, (GLsizei)sq->width, (GLsizei)sq->height, 0,
-                 GL_RGB, GL_UNSIGNED_SHORT_5_6_5, fb->buf[0]);
+                 GL_RGB, GL_UNSIGNED_SHORT_5_6_5, pixels);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
     g_mov.hasFrame = true;
 }
@@ -218,7 +278,7 @@ void Movie_Update(float dt) {
     while (g_mov.decoded <= g_mov.target) {
         int st = p_parse(g_mov.dec);
         if (st == 1) {
-            p_convert(g_mov.dec, p_rgb16, NULL);
+            if (p_convert) p_convert(g_mov.dec, p_rgb16, NULL);
         } else if (st == 0) {
             int n = movie_read();
             if (n <= 0) {

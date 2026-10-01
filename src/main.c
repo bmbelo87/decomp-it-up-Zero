@@ -258,7 +258,9 @@ void Game_Init(HINSTANCE hInstance) {
         Log_Print("WARNING: Failed to load song database from '%s'\n", cfgPath);
     }
 
-    Game_ChangeState(STATE_WARNING_INIT); /* Exceed: R_WARN_A -> 81 -> INTRO -> CREDIT */
+    /* Zero: sem R_WARN, abre direto o LOGO (BGA\81.DAT) */
+    Game_ChangeState(STATE_LOGO_ENTER);
+    /* era (Exceed2): Game_ChangeState(STATE_WARNING_INIT); */
     g_game.lastTime = timeGetTime();
 }
 

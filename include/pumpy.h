@@ -129,9 +129,19 @@ typedef enum {
 #define EX_CHANNEL_COUNT  3
 #define EX_CHANNEL_MAX    50
 */
-#define EX_SONG_COUNT     138   /* Exceed2: 0x412DD0 retorna 0x8A */
-#define EX_CHANNEL_COUNT  5     /* 0 BANYA, 1 K-POP, 2 POP (ARCADE), 3 REMIX, 4 BATTLE */
-#define EX_CHANNEL_MAX    53    /* 0x35: linha de 0xD4 bytes em 0x00458AB8 */
+/* Exceed2 (PIU32.EXE) — DESATIVADO
+#define EX_SONG_COUNT     138
+#define EX_CHANNEL_COUNT  5
+#define EX_CHANNEL_MAX    53
+*/
+#define EX_SONG_COUNT     148   /* Zero: 0x805a2f0 retorna 0x94 (tabela 0x08119040) */
+#define EX_CHANNEL_COUNT  5     /* campo +0x24: 0 BANYA, 1 K-POP, 2 POP, 3 REMIX, 4 ANOTHER */
+#define EX_CHANNEL_MAX    52    /* maior canal (K-POP, 51) + 0 final; gerado por gen_zero_songs.py */
+#define EX_CH_BANYA   0
+#define EX_CH_KPOP    1
+#define EX_CH_POP     2
+#define EX_CH_REMIX   3
+#define EX_CH_ANOTHER 4
 typedef struct {
     uint32_t    id;         /* +0x00  hex -> "%X" nos nomes de arquivo */
     const char* artistKr;   /* +0x04 */
@@ -142,7 +152,11 @@ typedef struct {
     int         level[5];   /* +0x20 NORMAL HARD CRAZY FREESTYLE(Double) NIGHTMARE, -1 = não existe */
     uint8_t     visible;    /* +0x34 */
     uint8_t     hidden;     /* +0x35 — init 0x416474: visible = (hidden == 0) */
-    uint8_t     lock[5];    /* Exceed2 +0x3C..+0x40 (base 0x4563A4): modo travado por dificuldade */
+    uint8_t     lock[5];    /* Exceed2 +0x3C..+0x40; Zero +0x44..+0x48: modo travado por dificuldade */
+    int         baseId;     /* Zero +0x08: música de onde vêm AUD/MOV/DAT (-1 = a própria) */
+    int         channel;    /* Zero +0x24: EX_CH_* */
+    int         seq;        /* Zero +0x00 */
+    uint8_t     demo;       /* Zero +0x49: entra na demo (0x805a310) */
 } ExceedSong;
 extern const ExceedSong g_exSongs[EX_SONG_COUNT];
 extern const int g_exChannels[EX_CHANNEL_COUNT][EX_CHANNEL_MAX];
@@ -250,7 +264,8 @@ typedef struct {
     bool flipH, flipV;
 } SPRTileDef;
 
-#define MAX_BGA_LAYERS 64
+#define MAX_BGA_LAYERS 100   /* BGA3: 100 slots fixos (Zero usa até o 99, ex.: STATION) */
+/* era: #define MAX_BGA_LAYERS 64 */
 #define MAX_BGA_KEYFRAMES 512
 
 typedef struct {
@@ -690,7 +705,9 @@ void Station_Render(void);
  * (STEP\%X.STX, AUDIO\%X.AUD, BGA\%X.DAT, TITLE\T%X.PNZ). */
 extern bool g_exceedSongIds;
 const char* Song_IdStr(int id);
-int Song_DataId(int id);            /* A26 -> 401, A27 -> 402 (TITLE/BGA/STEP); o .AUD fica o da própria música */
+int Song_DataId(int id);            /* Zero: a própria (STX/TITLE); ver Song_FindFile para AUD/MOV/DAT */
+int Song_BaseId(int id);            /* Zero +0x08 (0x805a460), -1 = sem base */
+bool Song_FindFile(int id, const char* fmt, bool hex3, char* out, size_t outSize); /* id, depois base */
 const char* Song_DataIdStr(int id);
 bool ExSelect_IsXMode(void);
 unsigned ExSelect_GetFlags(void);

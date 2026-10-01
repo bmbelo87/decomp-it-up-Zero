@@ -87,14 +87,51 @@ const char* Song_IdStr(int id) {
     return s;
 }
 
-/* Ocultas desbloqueadas por código: A26 (Oh! Rosa!) e A27 (First Love) usam o
- * TITLE, o BGA e o STEP da 401 e da 402; só o .AUD (e a prévia D*.AUD) é o delas.
- * Regra deste projeto, pedida pelo usuário: o exceed.exe não tem esse desvio. */
+/* Exceed2 (desativado): A26/A27 usavam TITLE/BGA/STEP da 401/402.
 int Song_DataId(int id) {
     if (!g_exceedSongIds) return id;
     if (id == 0xA26) return 0x401;
     if (id == 0xA27) return 0x402;
     return id;
+}
+*/
+
+/* Zero: id base do registro (+0x08, piu 0x805a460); -1 se não houver. */
+int Song_BaseId(int id) {
+    for (int i = 0; i < EX_SONG_COUNT; i++)
+        if ((int)g_exSongs[i].id == id) return g_exSongs[i].baseId;
+    return -1;
+}
+
+/* Zero: STX e TITLE são da própria música (C1112.STX, TC1112E.PNZ); AUD/MOV/DAT
+ * caem na base quando o da própria não existe (Song_FindFile). */
+int Song_DataId(int id) {
+    return id;
+}
+
+static bool song_file_exists(const char* path) {
+    FILE* f = fopen(path, "rb");
+    if (!f) return false;
+    fclose(f);
+    return true;
+}
+
+/* piu 0x8081c63..0x8081cc8 (CPlayEngine): sprintf(fmt, id); se não existe,
+ * 0x805a460(id) e tenta de novo com a base. fmt recebe a raiz do jogo e o id
+ * já formatado ("%s/BGA/%s.MOV"); hex3 = "%03X" (AUDIO/%03X.AUD). */
+bool Song_FindFile(int id, const char* fmt, bool hex3, char* out, size_t outSize) {
+    char ids[16];
+    int base = Song_BaseId(id);
+    for (int pass = 0; pass < 2; pass++) {
+        int cur = pass == 0 ? id : base;
+        if (cur < 0) break;
+        snprintf(ids, sizeof(ids), hex3 ? "%03X" : "%X", (unsigned)cur);
+        snprintf(out, outSize, fmt, g_game.currentDirectory, ids);
+        if (song_file_exists(out)) return true;
+    }
+    snprintf(ids, sizeof(ids), hex3 ? "%03X" : "%X", (unsigned)id);
+    snprintf(out, outSize, fmt, g_game.currentDirectory, ids);
+    return false;
 }
 
 const char* Song_DataIdStr(int id) {
