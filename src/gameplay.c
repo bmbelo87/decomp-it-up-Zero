@@ -508,7 +508,8 @@ static int   g_skinL1[5]  = { -1, -1, -1, -1, -1 };
 static int   g_skinL2[5]  = { -1, -1, -1, -1, -1 };
 static int   g_skinL3[5]  = { -1, -1, -1, -1, -1 };
 static float g_skinOffX[5];
-static float g_skinOffY;          /* Zero [0x0862825c] (Y para cima) */
+static float g_skinOffY;
+static int   g_skinArrowP = -1;   /* Zero [+0xb904]: arrowp.spr da skin */          /* Zero [0x0862825c] (Y para cima) */
 static float g_skinFieldX[2];     /* Zero [0x08628260] campo P1/single, [0x08628264] campo P2 */
 
 static void exLoadSkin(void)
@@ -533,6 +534,7 @@ static void exLoadSkin(void)
         { {  2,  1,  0,  0,  0 },  0, -1, 0   },   /* SKIN07 */
     };
     for (int k = 0; k < 5; k++) g_skinTap[k] = g_skinL1[k] = g_skinL2[k] = g_skinL3[k] = -1;
+    g_skinArrowP = -1;
     /* Exceed2: unsigned fl = ExSelect_GetFlags(); sk = 0x10000 ? 2 : 0x20000 ? 1 : 0 */
     int sk = Zero_SkinIndex();
     char path[MAX_PATH];
@@ -550,6 +552,12 @@ static void exLoadSkin(void)
         }
         /* Exceed2: g_skinOffX[k] = k_off[sk][k]; */
         g_skinOffX[k] = k_zero[sk & 7].x[k];
+    }
+    /* 0x80806f0: arrowp.spr (efeito de pisar, 5 tiles: DL UL C UR DR) */
+    {
+        int start = g_game.sprTileCount;
+        SPR_LoadSPR("arrowp.spr", NULL, NULL, NULL);
+        g_skinArrowP = (g_game.sprTileCount >= start + 5) ? start : -1;
     }
     g_skinOffY = k_zero[sk & 7].y;
     g_skinFieldX[0] = k_zero[sk & 7].f1;
@@ -1196,7 +1204,7 @@ static void processInput(int player)
         if (panel < 0) continue;
         if (!Input_IsPadHit(usePlayer, btn)) continue;
         g_hitTimer[player][panel] = 17;
-        g_p1FlashTimer[player][panel] = 15; // inicia zoom+fade do tile p1
+        g_p1FlashTimer[player][panel] = 16; // Zero 0x807ff20: [+0xdd2c..] = 0, 16 quadros (era 15)
 
         /* Division: W/G pisadas na janela (PERFECT..BAD) explodem, somam no
          * contador e escolhem o ramo — sem judge, combo ou MISS (0x40f16a). */
@@ -2720,6 +2728,29 @@ void Gameplay_Render(void)
             }
         }
 
+        /* Zero 0x807ff20: ao pisar, arrowp.spr da skin na coluna (tiles DL UL C UR DR;
+         * a diagonal é a mesma imagem do ARROW02 girada pelo UV, o 2 é o Center).
+         * Origem (campo, 378) no sistema Y para cima; coluna * 49 (98/49 dos
+         * glTranslatef) + deslocamento da skin; tile 70x70 escalado em torno de
+         * (35, 35) por t * 0.01875 + 0.8, alfa = [0x0811ce40][t / 2], t = 1..16. */
+        if (g_skinArrowP >= 0 && !isHalfDouble) {
+            static const float k_alpha[9] = { 0.0f, 1.0f, 0.9f, 0.8f, 0.7f, 0.6f, 0.4f, 0.2f, 0.0f };
+            for (int pan = 0; pan < panelCount; pan++) {
+                int ft = g_p1FlashTimer[p][pan];
+                if (ft <= 0) continue;
+                int col = pan % 5;
+                int t = 17 - ft;                       /* 1..16 */
+                float field;
+                if (isDoubleOrNightmare) field = (pan < 5) ? 65.0f + g_skinFieldX[0] : 312.0f + g_skinFieldX[1];
+                else                     field = (p == 1 ? 348.0f : 28.0f) + g_skinFieldX[0];
+                float sc = (float)t * 0.01875f + 0.8f;
+                int idx = g_skinArrowP + col;
+                float w = (float)g_game.sprTiles[idx].srcW, h = (float)g_game.sprTiles[idx].srcH;
+                float cx = field + col * 49.0f + g_skinOffX[col] + w * 0.5f;
+                float cy = 480.0f - 378.0f - (g_skinOffY + h * 0.5f);
+                Sprite_DrawTileUV(idx, cx, cy, w * sc, h * sc, k_alpha[t / 2]);
+            }
+        } else
         /* Tile "p1" do ARROW54X.SP2 — borda branca/cinza da seta.
          * Original (Ghidra): ao pressionar o botão (borda de subida), aparece com
          * zoom (1.3x→1.0x) e some. IsPadHit dispara g_p1FlashTimer. */
