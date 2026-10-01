@@ -1,5 +1,6 @@
 #include "pumpy.h"
 #include "bga.h"
+#include "movie.h"
 
 static int g_resultFrame;
 /* Este static escondia o g_fontTexId global (font.c:103, declarado extern em
@@ -342,6 +343,173 @@ static void exGradeSounds(int t)
     }
 }
 
+/* ── Zero: CDanceGrade (piu, Begin 0x806f1a0, quadro 0x806f770) ─────────────
+ * Begin: BGA/GRADE.DAT (GRADEEZ no EASY), /SCRIPT/UI/ZERO/DANCEGRADE.LUA,
+ *   SFX_DANCEGRADE.LUA, vídeo BGA/<BACKGROUND_MOVIE> = BGA/GRADE.MOV sem loop,
+ *   fonte BGA/SCOREFONT.DAT -> SCOREFONT.TGA (0x804f970).
+ * Linhas: PERFECT GREAT GOOD BAD MISS MAXCOMBO SCORE, >= 3 dígitos cada
+ *   (0x80a1f80); começam em SCORE_DRAW_START_TIME (90) + i * 4, em
+ *   SCORE_Y_i = 323 - 42 * i (Y para cima). P1 0x80500b0 alinhado à esquerda
+ *   em x = 150 - (7 - dígitos) * 22 (o 1º dígito cai em 18); P2 0x804fe50 com a
+ *   unidade em 585 (RIGHT_SCORE_X), andando -22. Dígito 36x39 da grade 8 x n.
+ * Letra: cena 1P_S/A/B/C/D/F (2P_*) do GRADE.BGA a partir de 210; S com
+ *   razão >= 1.0 e MISS == 0, A >= 0.95, B >= 0.90, C >= 0.85, D >= 0.75.
+ * Sons: EFF_TICK (8-1) a cada 5 quadros enquanto conta; 230 EFF_ANNOUNCE (9-5);
+ *   235 EFF_RANK_x_B (9-x) + EFF_RANK_x (RANK_x) da melhor nota.
+ * Fim: fade preto 600..630 (FADEOUT_START_TIME); sai em 630 ou no fim do vídeo. */
+static int g_zScoreFont = -1;
+static int g_zDigits[2][7];
+static int g_zLastTick;
+static int g_zSnd[16];
+static bool g_zSndInit;
+
+static int zDigitCount(int v)
+{
+    int n = 1;
+    for (v = v < 0 ? -v : v; v >= 10; v /= 10) n++;
+    return n < 3 ? 3 : n;                                   /* 0x806f1a0: mínimo 3 */
+}
+
+static void zDigit(int x, int y, int d)
+{
+    if (g_zScoreFont < 0 || !g_game.textures[g_zScoreFont].inUse) return;
+    float u0 = (float)(d % 8) * 0.125f, u1 = u0 + 0.125f;
+    float v0 = (float)(d / 8) * 0.12109375f + 0.28515625f, v1 = v0 + 0.12109375f;
+    glEnable(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, g_game.textures[g_zScoreFont].id);
+    glColor4f(1, 1, 1, 1);
+    glBegin(GL_QUADS);
+    glTexCoord2f(u0, v0); glVertex2i(x, y + 39);
+    glTexCoord2f(u0, v1); glVertex2i(x, y);
+    glTexCoord2f(u1, v1); glVertex2i(x + 36, y);
+    glTexCoord2f(u1, v0); glVertex2i(x + 36, y + 39);
+    glEnd();
+}
+
+/* 0x80500b0: revela da esquerda, um dígito a cada 10 quadros, o da vez rolando */
+static void zNumP1(int x, int y, int v, int nd, int elap)
+{
+    int px = x - nd * 22 + 22;
+    for (int k = nd - 1, i = 0; k >= 0; k--, i++, px += 22) {
+        int p10 = 1;
+        for (int j = 0; j < k; j++) p10 *= 10;
+        if (elap >= 10 * (i + 1)) zDigit(px, y, (v / p10) % 10);
+        else { zDigit(px, y, (elap - 10 * i) % 10); break; }
+    }
+}
+
+/* 0x804fe50: começa na unidade em x e anda -22 */
+static void zNumP2(int x, int y, int v, int nd, int elap)
+{
+    for (int k = 0; k < nd; k++, x -= 22, v /= 10) {
+        if (elap >= 10 * (k + 1)) zDigit(x, y, v % 10);
+        else { zDigit(x, y, (elap - 10 * k) % 10); break; }
+    }
+}
+
+static int zValue(int p, int i)
+{
+    switch (i) {
+    case 0: return g_game.stats.perfectCount[p];
+    case 1: return g_game.stats.greatCount[p];
+    case 2: return g_game.stats.goodCount[p];
+    case 3: return g_game.stats.badCount[p];
+    case 4: return g_game.stats.missCount[p];
+    case 5: return (int)g_game.stats.maxCombo[p];
+    default: return (int)g_game.stats.score[p];
+    }
+}
+
+static void zDanceGradeEnter(void)
+{
+    char path[MAX_PATH];
+    snprintf(path, sizeof(path), "%s/BGA/SCOREFONT.DAT", g_game.currentDirectory);
+    g_zScoreFont = -1;
+    if (RES_Open(path)) {
+        g_zScoreFont = loadTextureFromRES("SCOREFONT.TGA");
+        RES_Close();
+    }
+    if (g_zScoreFont < 0) Log_Print("DG: SCOREFONT.TGA não carregou\n");
+    Movie_Close();
+    snprintf(path, sizeof(path), "%s/BGA/GRADE.MOV", g_game.currentDirectory);
+    Movie_Open(path, false);
+    for (int p = 0; p < 2; p++)
+        for (int i = 0; i < 7; i++) g_zDigits[p][i] = zDigitCount(zValue(p, i));
+    g_zLastTick = -100;
+    if (!g_zSndInit) {
+        static const char* const k_wav[14] = {
+            "8-1.WAV", "9-5.WAV",
+            "RANK_S.WAV", "RANK_A.WAV", "RANK_B.WAV", "RANK_C.WAV", "RANK_D.WAV", "RANK_F.WAV",
+            "9-S.WAV", "9-A.WAV", "9-B.WAV", "9-C.WAV", "9-D.WAV", "9-F.WAV",
+        };
+        for (int k = 0; k < 14; k++) g_zSnd[k] = Audio_LoadWaveFile(k_wav[k]);
+        g_zSndInit = true;
+    }
+}
+
+static void zPlay(int k) { if (g_zSnd[k] >= 0) Audio_Play(g_zSnd[k], false); }
+
+/* devolve true quando a tela terminou */
+static bool zDanceGradeUpdate(int t, float dt)
+{
+    if (Movie_IsOpen()) Movie_Update(dt);
+    int maxD = 3;
+    for (int p = 0; p < 2; p++)
+        if (g_game.activePlayerMask & (1 << p))
+            for (int i = 0; i < 7; i++) if (g_zDigits[p][i] > maxD) maxD = g_zDigits[p][i];
+    /* EFF_TICK: a cada 5 quadros enquanto os números rolam */
+    if (t >= 90 && t - g_zLastTick >= 5 && t <= 90 + 6 * 4 + maxD * 10) {
+        g_zLastTick = t;
+        zPlay(0);
+    }
+    if (t == 230) zPlay(1);                                   /* EFF_ANNOUNCE */
+    if (t == 235) {                                           /* melhor nota */
+        int best = 5;
+        if ((g_game.activePlayerMask & 1) && g_gradeP1 < best) best = g_gradeP1;
+        if ((g_game.activePlayerMask & 2) && g_gradeP2 < best) best = g_gradeP2;
+        zPlay(8 + best);                                      /* EFF_RANK_x_B */
+        zPlay(2 + best);                                      /* EFF_RANK_x */
+    }
+    bool movieEnd = Movie_IsOpen() && Movie_HasEnded();
+    return t >= 630 || (movieEnd && t > 235);
+}
+
+static void zDanceGradeRender(int t)
+{
+    if (Movie_IsOpen()) Movie_Render();
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    static const char* const k_letter[2][6] = {
+        { "1P_S", "1P_A", "1P_B", "1P_C", "1P_D", "1P_F" },
+        { "2P_S", "2P_A", "2P_B", "2P_C", "2P_D", "2P_F" },
+    };
+    for (int p = 0; p < 2; p++) {
+        if (!(g_game.activePlayerMask & (1 << p))) continue;
+        for (int i = 0; i < 7; i++) {
+            int t0 = 90 + 4 * i;
+            if (t < t0) break;
+            int y = 323 - 42 * i, nd = g_zDigits[p][i];
+            if (p == 0) zNumP1(150 - (7 - nd) * 22, y, zValue(p, i), nd, t - t0);
+            else        zNumP2(585, y, zValue(p, i), nd, t - t0);
+        }
+        if (t >= 210 && g_game.bgaPicCount > 0) {
+            int g = (p == 0) ? g_gradeP1 : g_gradeP2;
+            if (g < 0 || g > 5) g = 5;
+            BGA_ScenePlay(0, k_letter[p][g], true);
+        }
+    }
+    if (t >= 600) {                                           /* fade 600..630 */
+        float a = (float)(t - 600) / 30.0f;
+        if (a > 1.0f) a = 1.0f;
+        glDisable(GL_TEXTURE_2D);
+        glColor4f(0, 0, 0, a);
+        glBegin(GL_QUADS);
+        glVertex2f(0, 0); glVertex2f(640, 0); glVertex2f(640, 480); glVertex2f(0, 480);
+        glEnd();
+        glColor4f(1, 1, 1, 1);
+    }
+}
+
 void Result_Enter(void) {
     g_resultFrame = 0;
     g_exT = 0;
@@ -354,11 +522,12 @@ void Result_Enter(void) {
     Font_LoadTexture();   /* já grava no g_fontTexId global */
 
     BGM_Stop();
+    /* Exceed 0x40CD3F: AUDIO\GRADE.AUD — o Zero não tem (fundo = BGA/GRADE.MOV)
     char ap[MAX_PATH];
-    /* Exceed 0x40CD3F: AUDIO\GRADE.AUD (loop: HIPÓTESE, igual ao Prex3) */
     snprintf(ap, sizeof(ap), "%s/AUDIO/%s.AUD", g_game.currentDirectory,
              g_exceedSongIds ? "GRADE" : "83");
     if (BGM_LoadAUDDirect(ap)) BGM_Play(true);
+    */
 
     g_gradeP1 = calcGrade(g_game.stats.perfectCount[0], g_game.stats.greatCount[0],
                           g_game.stats.goodCount[0], g_game.stats.badCount[0],
@@ -380,23 +549,22 @@ void Result_Enter(void) {
         }
     }
     Log_Print("Result: grades P1=%d P2=%d\n", g_gradeP1, g_gradeP2);
+    if (g_exceedSongIds) zDanceGradeEnter();
 }
 
 void Result_Update(float dt) {
-    (void)dt;
     if (g_exceedSongIds) {
         if (g_game.state == STATE_DANCE_GRADE_ENTER) {
-            /* 0x40CF34: quadros 0..60, depois zera o contador */
-            if (++g_resultFrame > 0x3C) {
-                g_resultFrame = 0;
-                g_exT = 0;
-                Game_ChangeState(STATE_DANCE_GRADE_DISPLAY);
-            }
+            /* Zero: sem a introdução de 60 quadros do Exceed (0x40CF34) */
+            g_resultFrame = 0;
+            g_exT = 0;
+            Game_ChangeState(STATE_DANCE_GRADE_DISPLAY);
             return;
         }
         if (g_game.state != STATE_DANCE_GRADE_DISPLAY) return;
-        exGradeSounds(g_exT);
-        if (g_exT > 0x168) {                     /* 0x40D0E7 */
+        /* exGradeSounds(g_exT);  Exceed */
+        if (zDanceGradeUpdate(g_exT, dt)) {      /* Zero 0x806f770; Exceed: g_exT > 0x168 */
+            Movie_Close();
             GameState ns = Result_GetNextState();
             BGM_Stop();
             Resource_ClearBGA();
@@ -459,9 +627,12 @@ void Result_Render(void) {
             return;
         }
         if (g_game.state != STATE_DANCE_GRADE_DISPLAY) return;
+        zDanceGradeRender(g_exT);               /* Zero */
+        /* Exceed:
         BGA_SetEventFrame(0, g_exT % 360 + 60);
         if (g_game.activePlayerMask & 1) exPlayer(0, g_exT);
         if (g_game.activePlayerMask & 2) exPlayer(1, g_exT);
+        */
         return;
     }
     if (g_game.state == STATE_DANCE_GRADE_ENTER) {
