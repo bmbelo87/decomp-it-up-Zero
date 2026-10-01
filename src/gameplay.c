@@ -1210,6 +1210,147 @@ static void applyRowJudgment(int p, JudgeType jt)
         g_game.stats.maxCombo[p] = g_game.stats.combo[p];
 }
 
+/* ---------------------------------------------------------------------------
+ * Zero (piu 0x808a760): julgamento POR LINHA.
+ *   - segurar o botão conta como pisar nas partes do long (corpo 0xB, fim 0xC;
+ *     começo 0xA só depois do tempo dele) enquanto a linha está na janela de
+ *     PERFECT ([+0x240..+0x244]);
+ *   - pisar julga pela janela e guarda o PIOR resultado da linha; parte de long
+ *     pisada é consumida, explode e deixa a linha em PERFECT ([+0x1a] = 1);
+ *     seta comum fica marcada (-0x80);
+ *   - um aperto resolve só a primeira linha com nota (bVar26);
+ *   - a linha é julgada quando não sobra nota sem pisar; PERFECT/GREAT explodem
+ *     as setas, GOOD/BAD deixam elas subindo;
+ *   - passou da janela de BAD com nota sem pisar: todas marcadas e UM MISS.
+ * ------------------------------------------------------------------------- */
+static uint16_t* g_zHit[2];     /* painéis pisados (marcados) por linha */
+static uint8_t*  g_zDone[2];    /* linha resolvida */
+static int8_t*   g_zRowJ[2];    /* pior julgamento da linha até agora */
+static int       g_zFirst[2];
+static int       g_zRows;
+
+static void zeroJudgeReset(void)
+{
+    for (int p = 0; p < 2; p++) {
+        free(g_zHit[p]); free(g_zDone[p]); free(g_zRowJ[p]);
+        g_zHit[p] = NULL; g_zDone[p] = NULL; g_zRowJ[p] = NULL;
+        g_zFirst[p] = 0;
+    }
+    g_zRows = (g_songLoaded && g_chart) ? (int)g_chart->rowCount : 0;
+    if (g_zRows <= 0) return;
+    for (int p = 0; p < 2; p++) {
+        g_zHit[p]  = (uint16_t*)calloc((size_t)g_zRows, sizeof(uint16_t));
+        g_zDone[p] = (uint8_t*)calloc((size_t)g_zRows, 1);
+        g_zRowJ[p] = (int8_t*)calloc((size_t)g_zRows, 1);
+    }
+}
+
+static void zeroExplode(int p, int pan, int ri)
+{
+    g_noteState[p][pan] = 1;
+    g_noteExplodeRow[p][pan] = ri;
+    g_noteExplodeFrame[p][pan] = 0;
+    g_glowTimer[p][pan] = 24;
+}
+
+static void zeroJudge(int p)
+{
+    if (!g_songLoaded || !g_chart || !g_zHit[p]) return;
+    bool dn = isDNMode();
+    int panCount = dn ? 10 : 5;
+    #define ZJ_V(r, pn) (dn ? getDNPanelValue(&g_chart->rows[r], pn) : getPanelValue(&g_chart->rows[r], pn, p))
+    #define ZJ_CLR(r, pn) do { if (dn) clearDNPanel(&g_chart->rows[r], pn); else clearPanel(&g_chart->rows[r], pn, p); } while (0)
+    #define ZJ_ISHOLD(v) ((v) == NT_HOLD_H || (v) == NT_HOLD_B || (v) == NT_HOLD_T)
+    static const PadButton k_btn[5] = { PAD_DL, PAD_UL, PAD_C, PAD_UR, PAD_DR };
+
+    /* botões: flash do receptor e efeito de pisar (0x807ff20), com ou sem nota */
+    bool hitB[10], downB[10];
+    for (int pan = 0; pan < panCount; pan++) {
+        int pl = dn ? dnPanelPlayer(pan) : p;
+        PadButton b = dn ? (PadButton)dnPanelBtn(pan) : k_btn[pan];
+        hitB[pan] = Input_IsPadHit(pl, b);
+        downB[pan] = Input_IsPadDown(pl, b) || g_autoPanel[pan];
+        if (hitB[pan]) { g_hitTimer[p][pan] = 17; g_p1FlashTimer[p][pan] = 16; }
+    }
+
+    double badE = judgeBadEarly(), badL = judgeBadLate();
+    while (g_zFirst[p] < g_zRows && g_zDone[p][g_zFirst[p]]) g_zFirst[p]++;
+
+    /* 1) acertos: a primeira linha com nota pisada encerra a busca do quadro */
+    for (int ri = g_zFirst[p]; ri < g_zRows; ri++) {
+        double diff = g_songTime - getRowTime(ri);
+        if (diff < -badE) break;
+        if (g_zDone[p][ri]) continue;
+        bool any = false, hitNow = false;
+        for (int pan = 0; pan < panCount; pan++) {
+            uint8_t v = ZJ_V(ri, pan);
+            if (!v || (g_zHit[p][ri] & (1u << pan))) continue;
+            any = true;
+            bool autoHit = g_autoPanel[pan] && diff >= 0.0;
+            bool holdHit = downB[pan] && evaluateTiming(diff) == JT_PERFECT &&
+                           (v == NT_HOLD_B || v == NT_HOLD_T || (v == NT_HOLD_H && diff >= 0.0));
+            if (!hitB[pan] && !autoHit && !holdHit) continue;
+            JudgeType jt = (autoHit || holdHit) ? JT_PERFECT : evaluateTiming(diff);
+            if (jt == JT_MISS || jt == JT_NONE) continue;      /* fora da janela */
+            hitNow = true;
+            if (ZJ_ISHOLD(v)) {
+                zeroExplode(p, pan, ri);
+                ZJ_CLR(ri, pan);
+                g_zRowJ[p][ri] = (int8_t)JT_PERFECT;           /* [+0x1a] = 1 */
+                g_holdRows[p][pan] = (v == NT_HOLD_T) ? -1 : ri;
+                g_lastPerfectRow[p][pan] = ri;
+            } else {
+                g_zHit[p][ri] |= (uint16_t)(1u << pan);
+                if (g_zRowJ[p][ri] < (int8_t)jt) g_zRowJ[p][ri] = (int8_t)jt;
+            }
+        }
+        /* sobrou nota sem pisar? */
+        bool left = false;
+        for (int pan = 0; pan < panCount; pan++) {
+            uint8_t v = ZJ_V(ri, pan);
+            if (v && !(g_zHit[p][ri] & (1u << pan))) { left = true; break; }
+        }
+        if (!left) {
+            JudgeType jt = (JudgeType)g_zRowJ[p][ri];
+            if (jt != JT_NONE) {
+                if (jt == JT_PERFECT || jt == JT_GREAT) {
+                    for (int pan = 0; pan < panCount; pan++)
+                        if (g_zHit[p][ri] & (1u << pan)) {
+                            zeroExplode(p, pan, ri);
+                            ZJ_CLR(ri, pan);
+                            g_lastPerfectRow[p][pan] = ri;
+                        }
+                }
+                applyRowJudgment(p, jt);
+            }
+            g_zDone[p][ri] = 1;                                  /* também linha vazia */
+        }
+        (void)any;
+        if (hitNow) break;
+    }
+
+    /* 2) MISS: passou da janela de BAD com nota sem pisar -> um MISS na linha */
+    for (int ri = g_zFirst[p]; ri < g_zRows; ri++) {
+        double diff = g_songTime - getRowTime(ri);
+        if (diff <= badL) break;
+        if (g_zDone[p][ri]) continue;
+        bool missed = false;
+        for (int pan = 0; pan < panCount; pan++) {
+            uint8_t v = ZJ_V(ri, pan);
+            if (!v || (g_zHit[p][ri] & (1u << pan))) continue;
+            missed = true;
+            g_zHit[p][ri] |= (uint16_t)(1u << pan);
+            if (ZJ_ISHOLD(v)) { g_holdRows[p][pan] = -1; ZJ_CLR(ri, pan); }
+        }
+        if (missed) applyRowJudgment(p, JT_MISS);
+        else if (g_zRowJ[p][ri]) applyRowJudgment(p, (JudgeType)g_zRowJ[p][ri]);
+        g_zDone[p][ri] = 1;
+    }
+    #undef ZJ_V
+    #undef ZJ_CLR
+    #undef ZJ_ISHOLD
+}
+
 static void processInput(int player)
 {
     if (!g_songLoaded) return;
@@ -1946,6 +2087,7 @@ void Gameplay_Start(int songId)
     /* g_hasAudio nunca era atribuida (sempre false): o fim por "musica acabou"
      * nao rodava e o jogo esperava o chart inteiro (ex.: 815 = 148 s de chart,
      * 95 s de musica). A BGM ja foi carregada pelo Loading antes desta chamada. */
+    zeroJudgeReset();
     g_hasAudio = (BGM_GetDurationMs() > 0);
     Log_Print("Gameplay: started song %d (audio=%d, %u ms)\n", songId, (int)g_hasAudio, BGM_GetDurationMs());
 }
@@ -2156,6 +2298,14 @@ void Gameplay_Update(float dt)
         }
     }
 
+    if (g_zeroSkinArrows && !isHDMode()) {
+        /* Zero: julgamento por linha (0x808a760) no lugar de input/holds/misses/autoplay */
+        if (isDNMode()) zeroJudge(0);
+        else {
+            if (g_game.activePlayerMask & 0x1) zeroJudge(0);
+            if (g_game.activePlayerMask & 0x2) zeroJudge(1);
+        }
+    } else {
     processInput(0);
     if (g_game.activePlayerMask & 0x2) processInput(1);
     processPendingRows(0);
@@ -2163,6 +2313,7 @@ void Gameplay_Update(float dt)
     processAutoplay();
     processHolds();
     processMisses();
+    }
 
     /* Stage Break: 51 miss consecutivos OU lifebar == 0 (se opção ativa) */
     {
