@@ -130,7 +130,9 @@ void Gamestate_UpdateIntro(float dt) {
             snprintf(aud, sizeof(aud), "%s/AUDIO/TITLE.AUD", g_game.currentDirectory);
             BGM_Stop();
             if (BGM_LoadAUDDirect(aud)) BGM_Play(true); /* loop do BGM: hipótese */
-            intro_open("CREDIT.MOV", true);
+            /* Zero CTitle::Begin (piu 0x80670fc): BGA/CREDIT.MOV em loop */
+            intro_open("BGA/CREDIT.MOV", true);
+            /* era (Exceed2): intro_open("CREDIT.MOV", true); */
             g_titleJoined = 0;
             g_titleFade = 0;
         }
