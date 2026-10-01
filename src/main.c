@@ -111,7 +111,8 @@ static void LoadBGAForState(GameState state) {
     /* Exceed CSelect: SELECT.DAT + SELECT2.DAT juntos + banners do 90.DAT */
     if (state == STATE_EXSELECT) {
         BGM_Stop();
-        ExSelect_Enter();
+        ZeroSelect_Enter();          /* Zero: CSelect (zero_select.c) */
+        /* ExSelect_Enter(); */      /* Exceed2 */
     }
 
     if (state == STATE_MENU_ENTER) {
@@ -427,7 +428,8 @@ void Game_Update(float dt) {
         NameInput_Update(dt);
         break;
     case STATE_EXSELECT:
-        ExSelect_Update(dt);
+        ZeroSelect_Update(dt);
+        /* ExSelect_Update(dt); */
         break;
     case STATE_STATION:
         Station_Update(dt);
@@ -805,7 +807,8 @@ void Game_Render(void) {
             NameInput_Render();
             break;
         case STATE_EXSELECT:
-            ExSelect_Render();
+            ZeroSelect_Render();
+            /* ExSelect_Render(); */
             break;
         case STATE_STATION:
             Station_Render();

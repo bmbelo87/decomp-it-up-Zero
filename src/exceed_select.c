@@ -791,6 +791,32 @@ static void startGame(void) {
     Loading_Enter(id);
 }
 
+/* Zero CSelect (piu 0x806badf): "RUN %X %s %s" -> fluxo Loading/Gameplay do
+ * projeto. diff = 0..4 (-n -h -c -d -nm) do P1; o gameplay do projeto usa um
+ * modo só para os dois lados, então o do P2 (2 jogadores) ainda não é aplicado. */
+bool ExSelect_StartZero(int id, int diff, unsigned joined, const int speed[2], const bool rv[2])
+{
+    int s = findSong(id);
+    if (s < 0 || diff < 0 || diff > 4 || g_exSongs[s].level[diff] == -1) return false;
+    g_game.selectedSongIndex = Song_FindByID(&g_game.songDB, id);
+    g_game.selectedModeIndex = Song_FindMode(&g_game.songDB, k_dbModeName[diff]);
+    if (g_game.selectedSongIndex < 0 || g_game.selectedModeIndex < 0) {
+        Log_Print("ZSELECT: songDB sem a música/modo (%d/%d)\n",
+                  g_game.selectedSongIndex, g_game.selectedModeIndex);
+        return false;
+    }
+    g_game.selectedDifficulty = g_exSongs[s].level[diff];
+    g_game.activePlayerMask = (int)(joined & 3);
+    g_game.isBattleMode = false;
+    for (int p = 0; p < 2; p++) {
+        g_game.cmdSpeedMult[p] = speed[p] > 0 ? speed[p] : 1;
+        g_game.cmdRandomVelocity[p] = rv[p];
+    }
+    g_exDemo = false;
+    Loading_Enter(id);
+    return true;
+}
+
 /* Comando RUN/PLAY do console (parser 0x401A0A..0x401D56): "<id> <modo> [-demo|-demo2]".
  * Entra direto no gameplay, sem passar pela Select. m = índice de k_dbModeName ou
  * EX_MODE_BATTLE (-bt), que usa a última dificuldade disponível entre N/H/C.

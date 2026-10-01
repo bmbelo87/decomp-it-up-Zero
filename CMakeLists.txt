@@ -155,6 +155,7 @@ add_executable(Pumpy
     # src/exceed_songs.c   (Exceed: tabelas do exceed.exe)
     # src/exceed2_songs.c   # Exceed2 — desativado
     src/zero_songs.c
+    src/zero_select.c
     src/service_menu.c
     src/coin.c
     src/debug_console.c

@@ -11,8 +11,11 @@ Tabela 0x08119040: 0x94 (148) registros x 0x4C bytes (contagem: 0x805a2f0 retorn
   +0x1C double BPM
   +0x24 u32 canal: 0 BANYA, 1 K-POP, 2 POP, 3 REMIX, 4 ANOTHER
   +0x28..+0x38 5 x s32 niveis NORMAL HARD CRAZY FREESTYLE NIGHTMARE (-1 = nao existe)
-  +0x3C byte visivel (reescrito por 0x805a2c0 a partir do estado de desbloqueio)
-  +0x3D byte oculta   +0x3E byte (0 nas Another)   +0x40 s32 textura (-1)
+  +0x3C byte desligada (reescrito por 0x805a2c0 com o vetor do SETUP em PIUZERO.INI+0xF38;
+        padrao 0x805a290 = tudo ligado)
+  +0x3D byte fixa (o SETUP nao deixa desligar)   +0x3E byte disponivel (0 nas Another; o
+        construtor 0x805aa60 ainda trava C03/C17 e abre parte das Another por dificuldade)
+  +0x40 s32 textura (-1)
   +0x44..+0x48 5 bytes de trava por dificuldade, +0x49 byte usado pela demo (0x805a310)
 
 Os canais nao sao uma tabela no binario: a lista sai do campo +0x24 na ordem da tabela.
@@ -83,10 +86,10 @@ def main():
     L.append("")
     L.append("const ExceedSong g_exSongs[EX_SONG_COUNT] = {")
     for i, s in enumerate(songs):
-        L.append("    { 0x%X, %s, %s, %s, %s, %.4f, { %s }, %d, %d, { %s }, %s, %d, %d, %d }, /* %d */" % (
+        L.append("    { 0x%X, %s, %s, %s, %s, %.4f, { %s }, %d, %d, { %s }, %s, %d, %d, %d, %d }, /* %d */" % (
             s["id"], c_escape(s["ak"]), c_escape(s["ae"]), c_escape(s["tk"]), c_escape(s["te"]), s["bpm"],
             ", ".join(str(x) for x in s["lv"]), s["vis"], s["hid"], ", ".join(str(x) for x in s["lock"]),
-            ("0x%X" % s["base"]) if s["base"] >= 0 else "-1", s["ch"], s["seq"], s["demo"], i))
+            ("0x%X" % s["base"]) if s["base"] >= 0 else "-1", s["ch"], s["seq"], s["demo"], s["arc"], i))
     L.append("};")
     L.append("")
     L.append("const int g_exChannels[EX_CHANNEL_COUNT][EX_CHANNEL_MAX] = {")

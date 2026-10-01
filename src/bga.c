@@ -758,8 +758,11 @@ void BGA_SetColor4(int bgaIndex, float r, float g, float b, float a) {
 static BGAScene* bga_findScene(int bgaIndex, const char* name) {
     if (bgaIndex < 0 || bgaIndex >= g_game.bgaPicCount || !name) return NULL;
     BGAPicture* pic = &g_game.bgaPics[bgaIndex];
+    /* Zero (piu 0x80a1ee0): djb2 sobre tolower -> nome sem diferenciar
+     * maiúsculas. No Exceed2 (0x423650) diferenciava; os nomes usados lá
+     * coincidem em caixa, então _stricmp atende os dois. */
     for (int i = 0; i < pic->sceneCount; i++)
-        if (strcmp(pic->scenes[i].name, name) == 0) return &pic->scenes[i];
+        if (_stricmp(pic->scenes[i].name, name) == 0) return &pic->scenes[i];
     return NULL;
 }
 
@@ -814,6 +817,18 @@ void BGA_ScenePlayAt(int bgaIndex, const char* name, int offset) {
     BGAScene* sc = bga_findScene(bgaIndex, name);
     if (!sc) return;
     BGA_DrawFrame(bgaIndex, sc->start + offset);
+}
+
+/* Zero 0x80a1a00: quadro atual menos o início da cena (0 se não houver) */
+int BGA_SceneOffset(int bgaIndex, const char* name) {
+    BGAScene* sc = bga_findScene(bgaIndex, name);
+    return sc ? sc->cur - sc->start : 0;
+}
+
+/* Zero 0x80a1ac0: posiciona a cena em início + n (não mexe no reverso) */
+void BGA_SceneSetOffset(int bgaIndex, const char* name, int n) {
+    BGAScene* sc = bga_findScene(bgaIndex, name);
+    if (sc) sc->cur = sc->start + n;
 }
 
 int BGA_SceneFrame(int bgaIndex, const char* name) {

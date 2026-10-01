@@ -11,5 +11,6 @@ bool Movie_HasEnded(void);
 int  Movie_GetDecoded(void);   /* [+0x30]: quadros decodificados */
 void Movie_Update(float dt);
 void Movie_Render(void);
+void Movie_RenderRect(float x0, float y0, float x1, float y1, float c, float alpha); /* Zero: prévia da Select */
 
 #endif

@@ -318,6 +318,27 @@ void Movie_Render(void) {
     if (blend) glEnable(GL_BLEND);
 }
 
+/* Zero CSelect (piu 0x806b6ba..0x806b70a): o quadro vai para uma textura e é
+ * desenhado num retângulo, com glColor4f(c, c, c, alpha) e blend (fade da
+ * prévia). Coordenadas Y-UP como o resto do render (y1 = topo). */
+void Movie_RenderRect(float x0, float y0, float x1, float y1, float c, float alpha) {
+    if (!g_mov.hasFrame) return;
+    GLboolean blend = glIsEnabled(GL_BLEND);
+    glEnable(GL_TEXTURE_2D);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glBindTexture(GL_TEXTURE_2D, g_mov.tex);
+    glColor4f(c, c, c, alpha);
+    glBegin(GL_QUADS);
+    glTexCoord2f(0, 0); glVertex2f(x0, y1);
+    glTexCoord2f(1, 0); glVertex2f(x1, y1);
+    glTexCoord2f(1, 1); glVertex2f(x1, y0);
+    glTexCoord2f(0, 1); glVertex2f(x0, y0);
+    glEnd();
+    glColor4f(1, 1, 1, 1);
+    if (!blend) glDisable(GL_BLEND);
+}
+
 #else /* sem MPEG2.dll fora do Windows */
 
 bool Movie_Open(const char* path, bool loop) {
@@ -331,5 +352,8 @@ bool Movie_HasEnded(void) { return true; }
 int  Movie_GetDecoded(void) { return 0; }
 void Movie_Update(float dt) { (void)dt; }
 void Movie_Render(void) {}
+void Movie_RenderRect(float x0, float y0, float x1, float y1, float c, float alpha) {
+    (void)x0; (void)y0; (void)x1; (void)y1; (void)c; (void)alpha;
+}
 
 #endif

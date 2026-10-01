@@ -157,6 +157,7 @@ typedef struct {
     int         channel;    /* Zero +0x24: EX_CH_* */
     int         seq;        /* Zero +0x00 */
     uint8_t     demo;       /* Zero +0x49: entra na demo (0x805a310) */
+    uint8_t     avail;      /* Zero +0x3E estático: disponível (0 nas Another); ver Zero_SongAvail */
 } ExceedSong;
 extern const ExceedSong g_exSongs[EX_SONG_COUNT];
 extern const int g_exChannels[EX_CHANNEL_COUNT][EX_CHANNEL_MAX];
@@ -706,6 +707,10 @@ void Station_Render(void);
 extern bool g_exceedSongIds;
 const char* Song_IdStr(int id);
 int Song_DataId(int id);            /* Zero: a própria (STX/TITLE); ver Song_FindFile para AUD/MOV/DAT */
+bool ExSelect_StartZero(int id, int diff, unsigned joined, const int speed[2], const bool rv[2]);
+void ZeroSelect_Enter(void);          /* zero_select.c — CSelect do Zero */
+void ZeroSelect_Update(float dt);
+void ZeroSelect_Render(void);
 int Song_BaseId(int id);            /* Zero +0x08 (0x805a460), -1 = sem base */
 bool Song_FindFile(int id, const char* fmt, bool hex3, char* out, size_t outSize); /* id, depois base */
 const char* Song_DataIdStr(int id);
