@@ -87,6 +87,11 @@ void Attract_Idle(void) {
 unsigned Title_GetJoinedMask(void) { return g_titleJoined; }
 void Title_SetJoinedMask(unsigned m) { g_titleJoined = m; }   /* CStation: entrada tardia */
 
+static int g_titleMusic = -1;   /* EFF_TITLE */
+void Title_StopMusic(void) {
+    if (g_titleMusic >= 0) Audio_Stop(g_titleMusic);
+}
+
 static void intro_open(const char* rel, bool loop) {
     char path[MAX_PATH];
     snprintf(path, sizeof(path), "%s/%s", g_game.currentDirectory, rel);
@@ -126,10 +131,17 @@ void Gamestate_UpdateIntro(float dt) {
         if (g_game.stateFrame == 1) {
             /* CTitle::Begin (0x41C05A): 0x426570("AUDIO\TITLE.AUD") e depois
              * 0x4229C8("CREDIT.MOV", 1) — vídeo em loop. */
+            /* Exceed2 (desativado): AUDIO\TITLE.AUD como BGM
             char aud[MAX_PATH];
             snprintf(aud, sizeof(aud), "%s/AUDIO/TITLE.AUD", g_game.currentDirectory);
             BGM_Stop();
-            if (BGM_LoadAUDDirect(aud)) BGM_Play(true); /* loop do BGM: hipótese */
+            if (BGM_LoadAUDDirect(aud)) BGM_Play(true);
+            */
+            /* Zero CTitle (piu 0x8067xxx): 0x804f220("EFF_TITLE", 1) ->
+             * WAVE/TITLE.WAV (SFX_TITLE.LUA) em loop; segue tocando na Station */
+            BGM_Stop();
+            if (g_titleMusic < 0) g_titleMusic = Audio_LoadWaveFile("TITLE.WAV");
+            if (g_titleMusic >= 0) { Audio_Stop(g_titleMusic); Audio_Play(g_titleMusic, true); }
             /* Zero CTitle::Begin (piu 0x80670fc): BGA/CREDIT.MOV em loop */
             intro_open("BGA/CREDIT.MOV", true);
             /* era (Exceed2): intro_open("CREDIT.MOV", true); */

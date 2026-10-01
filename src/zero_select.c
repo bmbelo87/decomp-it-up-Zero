@@ -613,6 +613,7 @@ static void drawWheel(int spin, int idxOff, float px, float py) {
  * ------------------------------------------------------------------------- */
 void ZeroSelect_Enter(void) {
     initUnlocks();
+    Title_StopMusic();
     Movie_Close();
     BGM_Stop();
     Resource_ClearBGA();

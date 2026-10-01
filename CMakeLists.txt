@@ -150,7 +150,8 @@ add_executable(Pumpy
     src/ir_mixtable.c
     src/nameinput.c
     src/exceed_select.c
-    src/station.c
+    # src/station.c   # Exceed2 — desativado
+    src/zero_station.c
     src/eeprom_x2.c
     # src/exceed_songs.c   (Exceed: tabelas do exceed.exe)
     # src/exceed2_songs.c   # Exceed2 — desativado

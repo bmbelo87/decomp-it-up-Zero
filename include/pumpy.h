@@ -697,6 +697,7 @@ void Gamestate_UpdateWarning(float dt);
 void Gamestate_UpdateLogo(float dt);
 void Gamestate_UpdateIntro(float dt);
 void Gamestate_RenderIntro(void);
+void Title_StopMusic(void);         /* Zero: para o EFF_TITLE (WAVE/TITLE.WAV) */
 unsigned Title_GetJoinedMask(void); /* intro.c — [0x568FF4] bits 0/1 */
 void Title_SetJoinedMask(unsigned m);
 void Station_Update(float dt);      /* station.c — CStation do Exceed2 */
