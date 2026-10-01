@@ -131,6 +131,7 @@ static void dcCmdHelp(void)
     Debug_PrintString("Command List -");
     Debug_PrintString(" /play step mode(-n, -h, -d, -c, -hd, -dv) [mp3name] - for step test");
     Debug_PrintString(" /autoplay - Automatic step push");
+    Debug_PrintString(" /skin N - skin de notas 0..7 (extra)");
     Debug_PrintString(" /history - to get history");
     Debug_PrintString(" /credit - Freevolt Team");
     Debug_PrintString(" /help - to get help");
@@ -188,6 +189,17 @@ static void dcCmdSet(void)
             }
         }
     }
+}
+
+/* /skin N — extra deste projeto: escolhe BGA/SKIN0N.DAT (0..7) para a próxima
+ * música, sem precisar do desbloqueio dos códigos da Select. */
+static void dcCmdSkin(void)
+{
+    if (g_dcArgc < 2) { Debug_PrintString("skin = %d (uso: /skin 0..7)", Zero_SkinIndex()); return; }
+    int n = atoi(g_dcArgv[1]);
+    if (n < 0 || n > 7) { Debug_PrintString("skin: 0..7"); return; }
+    Zero_SetSkinIndex(n);
+    Debug_PrintString("skin = %d (vale a partir da próxima música)", n);
 }
 
 /* /autoplay — 0x00402d50 */
@@ -297,6 +309,7 @@ static const DCCommand g_dcCommands[] = {
     { "/testmode",  dcCmdTestmode  },
     { "/testmode2", dcCmdTestmode  },
     { "/coin",      dcCmdAddCredit }, /* extra deste projeto, não existe no original */
+    { "/skin",      dcCmdSkin      }, /* extra deste projeto: BGA/SKIN0N.DAT */
     { NULL, NULL }
 };
 

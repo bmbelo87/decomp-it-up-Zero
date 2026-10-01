@@ -243,6 +243,7 @@ static const ZeroCode k_codes[18] = {
  * sem desbloqueio fica a 0 (BGA/SKIN00.DAT, 0x8080a1f) */
 static int s_skin = 0;
 int Zero_SkinIndex(void) { return s_skin; }
+void Zero_SetSkinIndex(int n) { if (n >= 0 && n <= 7) s_skin = n; }
 
 static bool twoPlayers(void) { return (s_joined & 3) == 3; }
 

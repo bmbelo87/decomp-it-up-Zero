@@ -2853,8 +2853,8 @@ void Gameplay_Render(void)
                         if (v != NT_HOLD_B && v != 0) break;
                     }
                     if (t < 0) continue;
-                    float yh = (h == held) ? (float)(receptorY + rh2 / 2) : Z_ROWY(h);   /* centros */
-                    float yt = Z_ROWY(t);
+                    float yh = ((h == held) ? (float)(receptorY + rh2 / 2) : Z_ROWY(h)) - g_skinOffY;   /* centros */
+                    float yt = Z_ROWY(t) - g_skinOffY;
                     float headBase = yh + 32.0f, tailTop = yt - 32.0f, tailBase = yt + 32.0f;
                     float left = posX[panel] + g_skinOffX[col];
                     SPRTileDef* bt = &g_game.sprTiles[g_skinL2[col]];
@@ -3180,7 +3180,7 @@ void Gameplay_Render(void)
                         float ssw = (float)g_game.sprTiles[sIdx].srcW;
                         float ssh = (float)g_game.sprTiles[sIdx].srcH;
                         Sprite_DrawTileUV(sIdx, posX[panel] + sw / 2.0f + g_skinOffX[arrowGroup] + XM_DXP(panel, y),
-                                          y, ssw, ssh, noteAlpha);
+                                          y - g_skinOffY, ssw, ssh, noteAlpha);   /* Zero [0x0862825c] */
                     } else
                     Sprite_DrawTileUV(aidx, posX[panel] + sw / 2.0f + XM_DXP(panel, y), y, sw, sh, noteAlpha);
                 }
@@ -3208,7 +3208,7 @@ void Gameplay_Render(void)
             if (arrowGroup >= 0 && arrowGroup < 5 && g_skinL1[arrowGroup] >= 0) {
                 int sIdx = g_skinL1[arrowGroup] + arrowAnimFrame();
                 if (sIdx >= g_game.sprTileCount) sIdx = g_skinL1[arrowGroup];
-                Sprite_DrawTileUV(sIdx, posX[panel] + sw / 2.0f + g_skinOffX[arrowGroup] + XM_DXP(panel, y), y,
+                Sprite_DrawTileUV(sIdx, posX[panel] + sw / 2.0f + g_skinOffX[arrowGroup] + XM_DXP(panel, y), y - g_skinOffY,
                                   (float)g_game.sprTiles[sIdx].srcW, (float)g_game.sprTiles[sIdx].srcH, 1.0f);
             } else
             Sprite_DrawTileUV(aidx, posX[panel] + sw / 2.0f + XM_DXP(panel, y), y, sw, sh, 1.0f);
