@@ -2819,8 +2819,69 @@ void Gameplay_Render(void)
         #define XM_DX(yy) (xmS * ((yy) - xmY0))
         #define XM_DXP(pn, yy) (XM_S(pn) * ((yy) - xmY0))
 
+        /* Zero (piu 0x8087520): long note pela skin em uso.
+         *   linha da nota = base da seta (a seta ocupa 64 px acima dela);
+         *   corpo skinN_l2: UM quad com o UV inteiro do tile (0x809e040), da base
+         *     da cabeça até o topo da ponta;
+         *   ponta skinN_l3 inteira na linha final (0x809e2a0); se a distância for
+         *     < 64 px, sem corpo e a ponta só com a parte de baixo da textura
+         *     (0x809e0d0: fração = distância / 64);
+         *   cabeça skinN_l1 por cima (Pass 2 / exHeldHead). Segurado: a cabeça
+         *     fica no receptor e o corpo sai dele. */
+        if (g_zeroSkinArrows && !isHalfDouble && !g_game.cmdNonStep[p]) {
+            #define Z_PV(r, pn) (isDoubleOrNightmare ? getDNPanelValue(&g_chart->rows[r], pn)                                                     : getPanelValue(&g_chart->rows[r], pn, p))
+            #define Z_ROWY(r) ((float)(receptorY + rh2 / 2) +                 (((r) < g_visualRowCount && g_visualRow) ? (float)g_visualRow[r] : (float)(r)) * pPixelsPerRow                 - visualScrollRow * pPixelsPerRow)
+            for (int panel = 0; panel < panelCount; panel++) {
+                int col = panel % 5;
+                if (g_skinL2[col] < 0 || g_skinL3[col] < 0) continue;
+                int rows = (int)g_chart->rowCount;
+                /* cabeça de um hold que começa antes da tela */
+                int r0 = startRow;
+                for (int k = startRow; k >= 0; k--) {
+                    uint8_t v = Z_PV(k, panel);
+                    if (v == NT_HOLD_H) { r0 = k; break; }
+                    if (v != NT_HOLD_B && !(k == startRow && v == NT_HOLD_T)) break;
+                }
+                int held = g_holdRows[p][panel];
+                for (int h = (held >= 0 && held < r0) ? held : r0; h <= endRow && h < rows; h++) {
+                    bool isHead = (h == held) || (Z_PV(h, panel) == NT_HOLD_H);
+                    if (!isHead) continue;
+                    int t = -1;
+                    for (int k = h + 1; k < rows; k++) {
+                        uint8_t v = Z_PV(k, panel);
+                        if (v == NT_HOLD_T) { t = k; break; }
+                        if (v != NT_HOLD_B && v != 0) break;
+                    }
+                    if (t < 0) continue;
+                    float yh = (h == held) ? (float)(receptorY + rh2 / 2) : Z_ROWY(h);   /* centros */
+                    float yt = Z_ROWY(t);
+                    float headBase = yh + 32.0f, tailTop = yt - 32.0f, tailBase = yt + 32.0f;
+                    float left = posX[panel] + g_skinOffX[col];
+                    SPRTileDef* bt = &g_game.sprTiles[g_skinL2[col]];
+                    SPRTileDef* tt = &g_game.sprTiles[g_skinL3[col]];
+                    int bw = Texture_GetWidth(bt->texId); if (bw <= 0) bw = 256;
+                    int bh = Texture_GetHeight(bt->texId); if (bh <= 0) bh = 256;
+                    int tw = Texture_GetWidth(tt->texId); if (tw <= 0) tw = 256;
+                    int th = Texture_GetHeight(tt->texId); if (th <= 0) th = 256;
+                    if (tailTop > headBase) {
+                        Texture_DrawUV(bt->texId, left + XM_DXP(panel, yh), headBase, (float)bt->srcW, tailTop - headBase,
+                                       bt->u1 * bw, bt->v1 * bh, bt->u2 * bw, bt->v2 * bh, 1, 1, 1, 1);
+                        Texture_DrawUV(tt->texId, left + XM_DXP(panel, yh), tailTop, (float)tt->srcW, (float)tt->srcH,
+                                       tt->u1 * tw, tt->v1 * th, tt->u2 * tw, tt->v2 * th, 1, 1, 1, 1);
+                    } else if (tailBase > headBase) {
+                        float frac = (tailBase - headBase) / 64.0f;
+                        float vTop = tt->v2 - frac * (tt->v2 - tt->v1);
+                        Texture_DrawUV(tt->texId, left + XM_DXP(panel, yh), headBase, (float)tt->srcW, tailBase - headBase,
+                                       tt->u1 * tw, vTop * th, tt->u2 * tw, tt->v2 * th, 1, 1, 1, 1);
+                    }
+                    h = t;
+                }
+            }
+            #undef Z_PV
+            #undef Z_ROWY
+        }
         // Pass 0: Hold bodies (esticados entre runs de NT_HOLD_B)
-        if (g_fontArrowETC >= 0) {
+        if (g_fontArrowETC >= 0 && !g_zeroSkinArrows) {
             for (int panel = 0; panel < panelCount; panel++)
             {
                 int arrowIdx = isDoubleOrNightmare ? (panel % 5) : panel;
@@ -2942,7 +3003,7 @@ void Gameplay_Render(void)
          *           consumidos já foram apagados por clearPanel, então sem este
          *           bloco sobrava um buraco entre o receptor e a ponta. */
         bool exHeldHead[MAX_PANELS] = { false };
-        if (g_exceedSongIds && g_fontArrowETC >= 0 && !g_game.cmdNonStep[p]) {
+        if (g_exceedSongIds && (g_fontArrowETC >= 0 || g_zeroSkinArrows) && !g_game.cmdNonStep[p]) {
             #define EX_PV(r, pn) (isHalfDouble ? getNoteHD(&g_chart->rows[r], pn) \
                                : (isDoubleOrNightmare ? getDNPanelValue(&g_chart->rows[r], pn) \
                                : getPanelValue(&g_chart->rows[r], pn, p)))
@@ -2957,7 +3018,7 @@ void Gameplay_Render(void)
                     else if (v == NT_HOLD_T) tailRi = ri;
                     break;
                 }
-                if (tailRi < 0) continue;
+                if (tailRi < 0 || g_zeroSkinArrows) continue;   /* Zero: corpo já desenhado acima */
                 float vt = (tailRi < g_visualRowCount && g_visualRow) ? (float)g_visualRow[tailRi] : (float)tailRi;
                 float y1 = (float)(receptorY + rh2 / 2);
                 float y2 = (float)(receptorY + rh2 / 2 + (vt - visualScrollRow) * pPixelsPerRow);
@@ -2988,7 +3049,7 @@ void Gameplay_Render(void)
         // Pass 1: Hold tails
         for (int ri = startRow; ri <= endRow; ri++)
         {
-            if (g_fontArrowETC < 0) break;
+            if (g_fontArrowETC < 0 || g_zeroSkinArrows) break;   /* Zero: ponta no bloco acima */
                 float vri = (ri < g_visualRowCount && g_visualRow) ? (float)g_visualRow[ri] : (float)ri;
             float y = (float)(receptorY + rh2 / 2 + (vri - visualScrollRow) * pPixelsPerRow);
             if (y < receptorY - rh2 / 2 - 50 || y > scrollBottom + PANEL_SIZE) continue;
