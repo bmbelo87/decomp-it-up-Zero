@@ -17,7 +17,7 @@ void Game_ResetAllCheats(void);
  * deslocado (32, 42) da posição do .spr (0x807e820); W01/W02 em (70, 42). */
 #define ZERO_RECEPTOR_Y 65
 #define ZERO_ARROW_W    64
-#define ZERO_COL_STEP   49.0f
+#define ZERO_COL_STEP   50.0f   /* 0x810098c (DAT_0811cea0 = coluna do painel) */
 #define ZERO_REC_DY     42.0f
 #define P1_CENTER_X 160
 #define P2_CENTER_X 480
@@ -508,6 +508,8 @@ static int   g_skinL1[5]  = { -1, -1, -1, -1, -1 };
 static int   g_skinL2[5]  = { -1, -1, -1, -1, -1 };
 static int   g_skinL3[5]  = { -1, -1, -1, -1, -1 };
 static float g_skinOffX[5];
+static float g_skinOffY;          /* Zero [0x0862825c] (Y para cima) */
+static float g_skinFieldX[2];     /* Zero [0x08628260] campo P1/single, [0x08628264] campo P2 */
 
 static void exLoadSkin(void)
 {
@@ -517,6 +519,18 @@ static void exLoadSkin(void)
         { 2.0f, 1.0f, 0.0f, 0.0f, 0.0f },    /* SKIN00: 0x4044D4 (2, 1, 0, 0, 0) */
         { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f },    /* SKIN01: 0x4044AF */
         { 3.0f, 3.0f, 1.0f, -3.0f, -3.0f },  /* SKIN02: 0x4043C0 */
+    };
+    /* Zero 0x80806f0: deslocamento de cada coluna (DL UL C UR DR = [0x08628248..58]),
+     * Y [0x0862825c] e ajuste do campo P1 [0x08628260] / P2 [0x08628264] por skin. */
+    static const struct { float x[5], y, f1, f2; } k_zero[8] = {
+        { {  2,  0, -2, -1, -3 },  0, 0, 0.5f },   /* SKIN00 */
+        { {  1,  0,  0,  2,  0 },  0, 0, 0    },   /* SKIN01 */
+        { {  3,  2,  0, -2, -3 },  0, 0, 0    },   /* SKIN02 */
+        { {  1, -1, -2, -4, -6 }, -3, 3, 8    },   /* SKIN03 */
+        { {  6,  2,  1,  0, -2 },  0, 0, 4    },   /* SKIN04 */
+        { {  2,  1,  0,  0,  0 }, -1, 0, 4    },   /* SKIN05 */
+        { { -2, -4, -5, -5, -6 }, -4, 0, 9    },   /* SKIN06 */
+        { {  2,  1,  0,  0,  0 },  0, -1, 0   },   /* SKIN07 */
     };
     for (int k = 0; k < 5; k++) g_skinTap[k] = g_skinL1[k] = g_skinL2[k] = g_skinL3[k] = -1;
     /* Exceed2: unsigned fl = ExSelect_GetFlags(); sk = 0x10000 ? 2 : 0x20000 ? 1 : 0 */
@@ -534,8 +548,12 @@ static void exLoadSkin(void)
             SPR_LoadSPR(nm, NULL, NULL, NULL);
             *dst[j] = (g_game.sprTileCount > start) ? start : -1;
         }
-        g_skinOffX[k] = (sk < 3) ? k_off[sk][k] : 0.0f;
+        /* Exceed2: g_skinOffX[k] = k_off[sk][k]; */
+        g_skinOffX[k] = k_zero[sk & 7].x[k];
     }
+    g_skinOffY = k_zero[sk & 7].y;
+    g_skinFieldX[0] = k_zero[sk & 7].f1;
+    g_skinFieldX[1] = k_zero[sk & 7].f2;
     RES_Close();
     Log_Print("GP: skin SKIN%02d carregada (nota DL=%d)\n", sk, g_skinTap[0]);
 }
@@ -2572,8 +2590,9 @@ void Gameplay_Render(void)
             panelCount = 10;
             /* Exceed: pW 54, posX 74 + 48i / 323 + 48(i-5) */
             for (int i = 0; i < 10; i++) pW[i] = ZERO_ARROW_W;
-            for (int i = 0; i < 5; i++) posX[i] = 67.0f + i * ZERO_COL_STEP;
-            for (int i = 5; i < 10; i++) posX[i] = 314.0f + (i-5) * ZERO_COL_STEP;
+            /* Zero 0x8083070: campo em 65 + [0x08628260] e 312 + [0x08628264] */
+            for (int i = 0; i < 5; i++) posX[i] = 65.0f + g_skinFieldX[0] + i * ZERO_COL_STEP;
+            for (int i = 5; i < 10; i++) posX[i] = 312.0f + g_skinFieldX[1] + (i-5) * ZERO_COL_STEP;
             centerX = 320;
         } else {
             panelCount = 5;
@@ -2583,12 +2602,14 @@ void Gameplay_Render(void)
                  * P1 centro=161, P2 centro=479 (simetrico em 640px).
                  * P2[0]=356, ..., P2[4]=548. Gap entre P1(284) e P2(356) = 72px. */
                 /* Exceed: 358 + 48i */
-                for (int i = 0; i < 5; i++) posX[i] = 350.0f + i * ZERO_COL_STEP;
+                /* Zero: campo em 348 + [0x08628260] (x = coluna * 50) */
+                for (int i = 0; i < 5; i++) posX[i] = 348.0f + g_skinFieldX[0] + i * ZERO_COL_STEP;
                 centerX = P2_CENTER_X;
             } else {
                 /* P1 (sozinho ou com P2): posição padrão esquerda (mesma do solo) */
                 /* Exceed: 38 + 48i */
-                for (int i = 0; i < 5; i++) posX[i] = 30.0f + i * ZERO_COL_STEP;
+                /* Zero: campo em 28 + [0x08628260] (x = coluna * 50) */
+                for (int i = 0; i < 5; i++) posX[i] = 28.0f + g_skinFieldX[0] + i * ZERO_COL_STEP;
                 centerX = P1_CENTER_X;
             }
         }
@@ -2667,7 +2688,8 @@ void Gameplay_Render(void)
         // Para single (não HD/DN): srcX baked para P1-solo (base=38). Offset por player.
         {
             /* Exceed: recOffX = (HD/DN) ? 0 : posX[0] - 38, sem deslocamento em Y */
-            float recOffX = isHalfDouble ? 0.0f : isDoubleOrNightmare ? 70.0f : (posX[0] - 30.0f + 32.0f);
+            /* 0x807e820: 01/02 em (32, -42) no P1 e (352, -42) no P2; W01/W02 em (70, -42) */
+            float recOffX = isHalfDouble ? 0.0f : isDoubleOrNightmare ? 70.0f : (p == 1 ? 352.0f : 32.0f);
             float recOffY = isHalfDouble ? 0.0f : ZERO_REC_DY;
             if (sprReceptor >= 0 && !g_game.cmdFreedom[p]) {
                 int cnt = sprTileCount(sprReceptor);
