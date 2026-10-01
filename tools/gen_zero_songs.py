@@ -33,6 +33,15 @@ SONG_SIZE = 0x4C
 CHANNEL_COUNT = 5
 CHANNEL_NAMES = ("BANYA", "K-POP", "POP", "REMIX", "ANOTHER")
 
+# C44 "BANYA HARD REMIX": nenhuma referencia a 0xC44 no piu. Secoes do C44.STX
+# com dados: 2, 4, 5 (Hard, Crazy, Freestyle, como as C41..C43); niveis tirados
+# do TITLE/TC44E.PNZ (Crazy 18); Hard e Freestyle desconhecidos -> 0 ("?").
+EXTRA_SONGS = [
+    dict(id=0xC44, base=-1, ak="반야", ae="BanYa", tk="BANYA HARD REMIX", te="",
+         bpm=0.0, ch=3, lv=(-1, 0, 18, 0, -1), vis=1, hid=0, arc=1,
+         lock=bytes([1, 1, 1, 1, 1]), demo=0),
+]
+
 
 def read_cstr(b, va):
     if va == 0:
@@ -71,6 +80,11 @@ def main():
             lv=struct.unpack_from("<5i", b, o + 0x28),
             vis=b[o + 0x3C], hid=b[o + 0x3D], arc=b[o + 0x3E],
             lock=b[o + 0x44:o + 0x49], demo=b[o + 0x49]))
+    # Extras deste projeto (nao estao na tabela do piu): musicas com todos os
+    # arquivos no jogo (STEP.DAT, AUDIO, BGA, PREVIEW, TITLE, 90.DAT) mas sem
+    # registro no executavel desta versao.
+    for x in EXTRA_SONGS:
+        songs.append(dict(x, seq=len(songs) + 1000))
     chans = [[s["id"] for s in songs if s["ch"] == c] for c in range(CHANNEL_COUNT)]
     cmax = max(len(c) for c in chans) + 1  # 0 termina a lista
 
@@ -80,7 +94,7 @@ def main():
     L.append(" *   g_exChannels  <- campo +0x24 de cada registro, na ordem da tabela */")
     L.append('#include "pumpy.h"')
     L.append("")
-    L.append("#if EX_SONG_COUNT != %d || EX_CHANNEL_COUNT != %d || EX_CHANNEL_MAX != %d" % (SONG_COUNT, CHANNEL_COUNT, cmax))
+    L.append("#if EX_SONG_COUNT != %d || EX_CHANNEL_COUNT != %d || EX_CHANNEL_MAX != %d" % (len(songs), CHANNEL_COUNT, cmax))
     L.append('#error "pumpy.h: EX_SONG_COUNT/EX_CHANNEL_COUNT/EX_CHANNEL_MAX fora do Zero (rode tools/gen_zero_songs.py)"')
     L.append("#endif")
     L.append("")

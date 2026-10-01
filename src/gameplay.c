@@ -574,6 +574,33 @@ static void exLoadSkin(void)
     RES_Close();
     Log_Print("GP: skin SKIN%02d carregada (nota DL=%d)\n", sk, g_skinTap[0]);
 }
+/* Zero 0x8087520: corpo skinN_l2 esticado (UV inteiro) da base da cabeça ao topo
+ * da ponta; ponta skinN_l3 inteira; distância < 64 -> só a parte de baixo da
+ * ponta (0x809e0d0). yh/yt = centros das setas (Y para baixo). */
+static void zeroHoldDraw(int panel, int col, float left, float yh, float yt)
+{
+    (void)panel;
+    if (g_skinL2[col] < 0 || g_skinL3[col] < 0) return;
+    SPRTileDef* bt = &g_game.sprTiles[g_skinL2[col]];
+    SPRTileDef* tt = &g_game.sprTiles[g_skinL3[col]];
+    int bw = Texture_GetWidth(bt->texId); if (bw <= 0) bw = 256;
+    int bh = Texture_GetHeight(bt->texId); if (bh <= 0) bh = 256;
+    int tw = Texture_GetWidth(tt->texId); if (tw <= 0) tw = 256;
+    int th = Texture_GetHeight(tt->texId); if (th <= 0) th = 256;
+    float headBase = yh + 32.0f, tailTop = yt - 32.0f, tailBase = yt + 32.0f;
+    if (tailTop > headBase) {
+        Texture_DrawUV(bt->texId, left, headBase, (float)bt->srcW, tailTop - headBase,
+                       bt->u1 * bw, bt->v1 * bh, bt->u2 * bw, bt->v2 * bh, 1, 1, 1, 1);
+        Texture_DrawUV(tt->texId, left, tailTop, (float)tt->srcW, (float)tt->srcH,
+                       tt->u1 * tw, tt->v1 * th, tt->u2 * tw, tt->v2 * th, 1, 1, 1, 1);
+    } else if (tailBase > headBase) {
+        float frac = (tailBase - headBase) / 64.0f;
+        float vTop = tt->v2 - frac * (tt->v2 - tt->v1);
+        Texture_DrawUV(tt->texId, left, headBase, (float)tt->srcW, tailBase - headBase,
+                       tt->u1 * tw, vTop * th, tt->u2 * tw, tt->v2 * th, 1, 1, 1, 1);
+    }
+}
+
 static int g_hitTimer[2][MAX_PANELS]; // hit flash animation timer (p1)
 static int g_glowTimer[2][MAX_PANELS];    // glow aditivo: apenas PERFECT/GREAT
 static int g_p1FlashTimer[2][MAX_PANELS]; // tile p1: zoom+fade ao pressionar
@@ -2850,48 +2877,37 @@ void Gameplay_Render(void)
                 int col = panel % 5;
                 if (g_skinL2[col] < 0 || g_skinL3[col] < 0) continue;
                 int rows = (int)g_chart->rowCount;
-                /* cabeça de um hold que começa antes da tela */
-                int r0 = startRow;
-                for (int k = startRow; k >= 0; k--) {
-                    uint8_t v = Z_PV(k, panel);
-                    if (v == NT_HOLD_H) { r0 = k; break; }
-                    if (v == 0 || v == NT_HOLD_B || (k == startRow && v == NT_HOLD_T)) continue;
-                    break;   /* outra nota: não está dentro de um hold */
-                }
+                /* ponta de um hold a partir da cabeça h: atravessa corpo e linhas
+                 * vazias (apagadas ao passar), para em outra nota */
+                #define Z_TAIL(h, out) do { out = -1;                     for (int k_ = (h) + 1; k_ < rows; k_++) { uint8_t v_ = Z_PV(k_, panel);                         if (v_ == NT_HOLD_T) { out = k_; break; }                         if (v_ != NT_HOLD_B && v_ != 0) break; } } while (0)
+                #define Z_DRAW(h, t, isHeld) do {                     float yh = ((isHeld) ? (float)(receptorY + rh2 / 2) : Z_ROWY(h)) - g_skinOffY;                     float yt = Z_ROWY(t) - g_skinOffY;                     if ((isHeld) && yt < yh) yt = yh;                     zeroHoldDraw(panel, col, posX[panel] + g_skinOffX[col] + XM_DXP(panel, yh), yh, yt); } while (0)
+                int lastTail = -1;
+                /* 1) hold segurado: cabeça no receptor (a linha dela já foi apagada) */
                 int held = g_holdRows[p][panel];
-                for (int h = (held >= 0 && held < r0) ? held : r0; h <= endRow && h < rows; h++) {
-                    bool isHead = (h == held) || (Z_PV(h, panel) == NT_HOLD_H);
-                    if (!isHead) continue;
-                    int t = -1;
-                    for (int k = h + 1; k < rows; k++) {
+                if (held >= 0) {
+                    int t; Z_TAIL(held, t);
+                    if (t >= 0) { Z_DRAW(held, t, true); lastTail = t; }
+                }
+                /* 2) cabeça acima da tela (não segurada): só se a linha inicial for
+                 * corpo/ponta de um hold que ainda tem a cabeça no gráfico */
+                int from = startRow;
+                if (lastTail < startRow) {
+                    for (int k = startRow; k >= 0 && k > lastTail; k--) {
                         uint8_t v = Z_PV(k, panel);
-                        if (v == NT_HOLD_T) { t = k; break; }
-                        if (v != NT_HOLD_B && v != 0) break;
+                        if (v == NT_HOLD_H) { from = k; break; }
+                        if (v != NT_HOLD_B && !(k == startRow && v == NT_HOLD_T)) break;
                     }
+                }
+                /* 3) cabeças visíveis */
+                for (int h = (from > lastTail ? from : lastTail + 1); h <= endRow && h < rows; h++) {
+                    if (Z_PV(h, panel) != NT_HOLD_H) continue;
+                    int t; Z_TAIL(h, t);
                     if (t < 0) continue;
-                    float yh = ((h == held) ? (float)(receptorY + rh2 / 2) : Z_ROWY(h)) - g_skinOffY;   /* centros */
-                    float yt = Z_ROWY(t) - g_skinOffY;
-                    float headBase = yh + 32.0f, tailTop = yt - 32.0f, tailBase = yt + 32.0f;
-                    float left = posX[panel] + g_skinOffX[col];
-                    SPRTileDef* bt = &g_game.sprTiles[g_skinL2[col]];
-                    SPRTileDef* tt = &g_game.sprTiles[g_skinL3[col]];
-                    int bw = Texture_GetWidth(bt->texId); if (bw <= 0) bw = 256;
-                    int bh = Texture_GetHeight(bt->texId); if (bh <= 0) bh = 256;
-                    int tw = Texture_GetWidth(tt->texId); if (tw <= 0) tw = 256;
-                    int th = Texture_GetHeight(tt->texId); if (th <= 0) th = 256;
-                    if (tailTop > headBase) {
-                        Texture_DrawUV(bt->texId, left + XM_DXP(panel, yh), headBase, (float)bt->srcW, tailTop - headBase,
-                                       bt->u1 * bw, bt->v1 * bh, bt->u2 * bw, bt->v2 * bh, 1, 1, 1, 1);
-                        Texture_DrawUV(tt->texId, left + XM_DXP(panel, yh), tailTop, (float)tt->srcW, (float)tt->srcH,
-                                       tt->u1 * tw, tt->v1 * th, tt->u2 * tw, tt->v2 * th, 1, 1, 1, 1);
-                    } else if (tailBase > headBase) {
-                        float frac = (tailBase - headBase) / 64.0f;
-                        float vTop = tt->v2 - frac * (tt->v2 - tt->v1);
-                        Texture_DrawUV(tt->texId, left + XM_DXP(panel, yh), headBase, (float)tt->srcW, tailBase - headBase,
-                                       tt->u1 * tw, vTop * th, tt->u2 * tw, tt->v2 * th, 1, 1, 1, 1);
-                    }
+                    Z_DRAW(h, t, false);
                     h = t;
                 }
+                #undef Z_TAIL
+                #undef Z_DRAW
             }
             #undef Z_PV
             #undef Z_ROWY

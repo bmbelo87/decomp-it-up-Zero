@@ -134,7 +134,7 @@ typedef enum {
 #define EX_CHANNEL_COUNT  5
 #define EX_CHANNEL_MAX    53
 */
-#define EX_SONG_COUNT     148   /* Zero: 0x805a2f0 retorna 0x94 (tabela 0x08119040) */
+#define EX_SONG_COUNT     149   /* Zero: 0x94 (148) da tabela 0x08119040 + 1 extra (C44, tools/gen_zero_songs.py) */
 #define EX_CHANNEL_COUNT  5     /* campo +0x24: 0 BANYA, 1 K-POP, 2 POP, 3 REMIX, 4 ANOTHER */
 #define EX_CHANNEL_MAX    52    /* maior canal (K-POP, 51) + 0 final; gerado por gen_zero_songs.py */
 #define EX_CH_BANYA   0
