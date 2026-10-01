@@ -15,7 +15,7 @@ void Game_ResetAllCheats(void);
  * x = 28 + 2 (P1), 348 + 2 (P2), 65 + 2 / 312 + 2 (Double), topo da seta em
  * y = 33 (378 + 5 no sistema Y para cima) -> centro 65. Receptor (01/02.spr)
  * deslocado (32, 42) da posição do .spr (0x807e820); W01/W02 em (70, 42). */
-#define ZERO_RECEPTOR_Y 65
+#define ZERO_RECEPTOR_Y 37   /* + rh2/2 (28) = 65, centro da seta no receptor (era 65: julgava 28 px abaixo) */
 #define ZERO_ARROW_W    64
 #define ZERO_COL_STEP   50.0f   /* 0x810098c (DAT_0811cea0 = coluna do painel) */
 #define ZERO_REC_DY     42.0f
@@ -509,7 +509,8 @@ static int   g_skinL2[5]  = { -1, -1, -1, -1, -1 };
 static int   g_skinL3[5]  = { -1, -1, -1, -1, -1 };
 static float g_skinOffX[5];
 static float g_skinOffY;
-static int   g_skinArrowP = -1;   /* Zero [+0xb904]: arrowp.spr da skin */          /* Zero [0x0862825c] (Y para cima) */
+static int   g_skinArrowP = -1;   /* Zero [+0xb904]: arrowp.spr da skin */
+static int   g_skinSpark[5] = { -1, -1, -1, -1, -1 };   /* Zero [+0xf44..]: spark1..5.spr */          /* Zero [0x0862825c] (Y para cima) */
 static float g_skinFieldX[2];     /* Zero [0x08628260] campo P1/single, [0x08628264] campo P2 */
 
 static void exLoadSkin(void)
@@ -558,6 +559,14 @@ static void exLoadSkin(void)
         int start = g_game.sprTileCount;
         SPR_LoadSPR("arrowp.spr", NULL, NULL, NULL);
         g_skinArrowP = (g_game.sprTileCount >= start + 5) ? start : -1;
+    }
+    /* 0x80806f0: spark1..5.spr (5 quadros de 256x256) */
+    for (int k = 0; k < 5; k++) {
+        char nm[16];
+        snprintf(nm, sizeof(nm), "spark%d.spr", k + 1);
+        int start = g_game.sprTileCount;
+        SPR_LoadSPR(nm, NULL, NULL, NULL);
+        g_skinSpark[k] = (g_game.sprTileCount > start) ? start : -1;
     }
     g_skinOffY = k_zero[sk & 7].y;
     g_skinFieldX[0] = k_zero[sk & 7].f1;
@@ -1545,6 +1554,12 @@ static void processAutoplay(void)
                 if (!g_autoPanel[panel]) continue;
                 uint8_t val = isHD ? getNoteHD(&g_chart->rows[hitRows[i]], panel) : (dnAP ? getDNPanelValue(&g_chart->rows[hitRows[i]], panel) : getPanelValue(&g_chart->rows[hitRows[i]], panel, p));
                 if (!val) continue;
+                /* explosão como num acerto manual (processRowJudgment): antes o
+                 * autoplay limpava a nota sem ligar o efeito */
+                g_noteState[p][panel] = 1;
+                g_noteExplodeRow[p][panel] = hitRows[i];
+                g_noteExplodeFrame[p][panel] = 0;
+                g_glowTimer[p][panel] = 24;
                 if (isHD) clearHDPanel(&g_chart->rows[hitRows[i]], panel);
                 else if (dnAP) clearDNPanel(&g_chart->rows[hitRows[i]], panel);
                 else clearPanel(&g_chart->rows[hitRows[i]], panel, p);
@@ -2840,7 +2855,8 @@ void Gameplay_Render(void)
                 for (int k = startRow; k >= 0; k--) {
                     uint8_t v = Z_PV(k, panel);
                     if (v == NT_HOLD_H) { r0 = k; break; }
-                    if (v != NT_HOLD_B && !(k == startRow && v == NT_HOLD_T)) break;
+                    if (v == 0 || v == NT_HOLD_B || (k == startRow && v == NT_HOLD_T)) continue;
+                    break;   /* outra nota: não está dentro de um hold */
                 }
                 int held = g_holdRows[p][panel];
                 for (int h = (held >= 0 && held < r0) ? held : r0; h <= endRow && h < rows; h++) {
@@ -3855,6 +3871,54 @@ void Gameplay_Render(void)
         float erY = 38.0f + 28.0f + 1.0f; /* +1px ajuste fino de posição */
         static const float expOffXReg[5] = {-7.0f, -6.0f, -5.0f, -6.0f, -7.0f};
         static const float expOffXHD[6]  = {-5.0f, -6.0f, -7.0f, -7.0f, -6.0f, -5.0f};
+        /* Zero 0x807eb20 (com 0x8083070): origem (campo + 2, 378 + 5) no sistema Y
+         * para cima, coluna * 49. Em cada quadro t < 24:
+         *   arrowf.spr[coluna] aditivo, alfa 1 - t/24, escala 1 + t/100 em (32,32);
+         *   skinN.spr aditivo, mesma cor e escala em (27,27) + desvio da coluna
+         *   e o deslocamento da skin;
+         *   t < 15: sparkN.spr quadro t/3 em origem - (90, 95), aditivo. */
+        if (g_zeroSkinArrows && !isHalfDouble) {
+            static const float k_dx[5] = { -1, -2, -2, 0, -2 }, k_dy[5] = { -1, -3, -3, -4, -2 };
+            static const int k_spark[5] = { 0, 2, 4, 1, 3 };   /* DL s1, UL s3, C s5, UR s2, DR s4 */
+            #define Y_UP(yy) (480.0f - (yy))
+            for (int pan = 0; pan < expPanels; pan++) {
+                if (g_noteState[pe][pan] != 1) continue;
+                int col = pan % 5;
+                float t = (float)g_noteExplodeFrame[pe][pan];
+                if (t >= 24.0f) continue;
+                float field;
+                if (isDoubleOrNightmare) field = (pan < 5) ? 65.0f + g_skinFieldX[0] : 312.0f + g_skinFieldX[1];
+                else                     field = (pe == 1 ? 348.0f : 28.0f) + g_skinFieldX[0];
+                float ox = field + 2.0f + col * 49.0f, oy = 383.0f;
+                float a = 1.0f - t / 24.0f, sc = 1.0f + t / 100.0f;
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+                if (g_fontArrowF >= 0 && g_fontArrowF + col < g_game.sprTileCount) {
+                    int fi = g_fontArrowF + col;
+                    float w = (float)g_game.sprTiles[fi].srcW, h = (float)g_game.sprTiles[fi].srcH;
+                    float cx = 32.0f + (w * 0.5f - 32.0f) * sc, cy = 32.0f + (h * 0.5f - 32.0f) * sc;
+                    Sprite_DrawTileUV(fi, ox + cx, Y_UP(oy + cy), w * sc, h * sc, a);
+                }
+                if (g_skinTap[col] >= 0) {
+                    int si = g_skinTap[col] + arrowAnimFrame();
+                    if (si >= g_game.sprTileCount) si = g_skinTap[col];
+                    float w = (float)g_game.sprTiles[si].srcW, h = (float)g_game.sprTiles[si].srcH;
+                    float bx = k_dx[col] + 27.0f + (g_skinOffX[col] + w * 0.5f - 27.0f) * sc;
+                    float by = k_dy[col] + 27.0f + (g_skinOffY + h * 0.5f - 27.0f) * sc;
+                    Sprite_DrawTileUV(si, ox + bx, Y_UP(oy + by), w * sc, h * sc, a);
+                }
+                int sp = g_skinSpark[k_spark[col]];
+                if (t < 15.0f && sp >= 0) {
+                    int si = sp + (int)t / 3;
+                    if (si < g_game.sprTileCount) {
+                        float w = (float)g_game.sprTiles[si].srcW, h = (float)g_game.sprTiles[si].srcH;
+                        Sprite_DrawTileUV(si, ox - 90.0f + w * 0.5f, Y_UP(oy - 95.0f + h * 0.5f), w, h, 1.0f);
+                    }
+                }
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            }
+            #undef Y_UP
+            continue;
+        }
         for (int pan = 0; pan < expPanels; pan++) {
             if (g_noteState[pe][pan] != 1) continue;
             int base;
