@@ -31,6 +31,7 @@
 #include "pumpy.h"
 #include "bga.h"
 #include "movie.h"
+#include "testbga.h"
 #include <math.h>
 
 enum { ZB_SELECT = 0, ZB_ICONDD = 1, ZB_ICONALL = 2, ZB_SELECT3 = 3 };
@@ -94,6 +95,13 @@ static void initUnlocks(void) {
     unlockModes(0xC1818, 0, 0, 0, 0, 1);
     unlockModes(0xC1B18, 0, 0, 1, 0, 0);
     unlockModes(0xC1C09, 0, 0, 0, 1, 0);
+
+    /* Temporário (não é o original): tudo aberto até existir o desbloqueio
+     * por pontos/missões. Dificuldade sem chart continua fora (level == -1). */
+    for (int i = 0; i < EX_SONG_COUNT; i++) {
+        s_avail[i] = 1;
+        for (int d = 0; d < 5; d++) s_open[i][d] = 1;
+    }
 }
 
 /* ---------------------------------------------------------------------------
@@ -381,6 +389,15 @@ static int pushCode(int p, int button) {
             resetHistory(p);   /* 0x804f430 */
             return k;
         }
+    }
+    /* Extra do port (não existe no original): TestBGA, DL DL DL DL DR DR DR DR C,
+     * mesmo código do Prex3 (song_select.c). Starfield no lugar do fundo. */
+    static const uint8_t k_testBGA[9] = { ZB_DL, ZB_DL, ZB_DL, ZB_DL, ZB_DR, ZB_DR, ZB_DR, ZB_DR, ZB_C };
+    if (s_histLen[p] >= 9 && memcmp(s_hist[p] + s_histLen[p] - 9, k_testBGA, 9) == 0) {
+        resetHistory(p);
+        g_game.cmdTestBGA[p] = true;
+        InitS();
+        Log_Print("ZSELECT P%d: TestBGA ON\n", p + 1);
     }
     return -1;
 }
@@ -693,7 +710,8 @@ void ZeroSelect_Enter(void) {
     }
     s_bigIcon = NULL;
     s_anotherSel = true;
-    s_anotherChannel = false;   /* ANOTHERCHANNEL do INI: padrão "0" */
+    /* ANOTHERCHANNEL do INI: padrão "0" no original; ligado a pedido (ciclo BANYA, K-POP, POP, ANOTHER) */
+    s_anotherChannel = true;
 
     /* RIGHT começa no fim (0x80a1ac0(SELECT, RIGHT, 15)) */
     s_moveScene = "RIGHT";
