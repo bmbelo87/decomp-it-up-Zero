@@ -728,6 +728,7 @@ static void startGame(void) {
         Log_Print("EXSELECT: RUN %X -BT\n", (unsigned)id);
         g_game.selectedSongIndex = Song_FindByID(&g_game.songDB, id);
         g_game.selectedModeIndex = Song_FindMode(&g_game.songDB, k_dbModeName[EX_DB_DIVISION]);
+        g_game.selectedModeIndexP2 = -1;
         if (g_game.selectedSongIndex < 0 || g_game.selectedModeIndex < 0) {
             Log_Print("EXSELECT: songDB sem a música/DIVISION (%d/%d) — sem gameplay\n",
                       g_game.selectedSongIndex, g_game.selectedModeIndex);
@@ -771,6 +772,7 @@ static void startGame(void) {
     int id = (int)g_exSongs[s].id;
     g_game.selectedSongIndex = Song_FindByID(&g_game.songDB, id);
     g_game.selectedModeIndex = Song_FindMode(&g_game.songDB, k_dbModeName[argIdx]);
+    g_game.selectedModeIndexP2 = -1;
     if (g_game.selectedSongIndex < 0 || g_game.selectedModeIndex < 0) {
         Log_Print("EXSELECT: songDB sem a música/modo (%d/%d) — sem gameplay\n",
                   g_game.selectedSongIndex, g_game.selectedModeIndex);
@@ -794,7 +796,7 @@ static void startGame(void) {
 /* Zero CSelect (piu 0x806badf): "RUN %X %s %s" -> fluxo Loading/Gameplay do
  * projeto. diff = 0..4 (-n -h -c -d -nm) do P1; o gameplay do projeto usa um
  * modo só para os dois lados, então o do P2 (2 jogadores) ainda não é aplicado. */
-bool ExSelect_StartZero(int id, int diff, unsigned joined, const int speed[2], const bool rv[2])
+bool ExSelect_StartZero(int id, int diff, int diffP2, unsigned joined, const int speed[2], const bool rv[2])
 {
     int s = findSong(id);
     if (s < 0 || diff < 0 || diff > 4 || g_exSongs[s].level[diff] == -1) return false;
@@ -807,6 +809,12 @@ bool ExSelect_StartZero(int id, int diff, unsigned joined, const int speed[2], c
     }
     g_game.selectedDifficulty = g_exSongs[s].level[diff];
     g_game.activePlayerMask = (int)(joined & 3);
+    /* Zero: em 2P cada jogador escolhe N/H/C (CSelect guarda por jogador); o P2
+     * joga o próprio chart, que o gameplay mescla na metade direita. */
+    g_game.selectedModeIndexP2 = -1;
+    if ((joined & 3) == 3 && diffP2 >= 0 && diffP2 <= 4 && diffP2 != diff &&
+        g_exSongs[s].level[diffP2] != -1)
+        g_game.selectedModeIndexP2 = Song_FindMode(&g_game.songDB, k_dbModeName[diffP2]);
     g_game.isBattleMode = false;
     for (int p = 0; p < 2; p++) {
         g_game.cmdSpeedMult[p] = speed[p] > 0 ? speed[p] : 1;
@@ -837,6 +845,7 @@ bool ExSelect_Run(int id, int m, int demo)
 
     g_game.selectedSongIndex = Song_FindByID(&g_game.songDB, id);
     g_game.selectedModeIndex = Song_FindMode(&g_game.songDB, k_dbModeName[argIdx]);
+    g_game.selectedModeIndexP2 = -1;
     if (g_game.selectedSongIndex < 0 || g_game.selectedModeIndex < 0) return false;
 
     Menu_ResetState();

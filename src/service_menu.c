@@ -115,9 +115,32 @@ static uint32_t g_svcHeldBits;
 static uint32_t svcBitsHit(void)  { return g_svcHitBits;  }
 static uint32_t svcBitsHeld(void) { return g_svcHeldBits; }
 
+#include "zero_setup_font.inc"
+
+/* Zero (piu 0x809c8f0 / 0x809c580): texto do setup com a fonte 8x16 embutida
+ * (0x0811d080), sem textura (0x80a7fb0: glDisable(GL_TEXTURE_2D)). Cada bit
+ * aceso vira um ponto em (x + coluna, y + 16 - linha); avanço de 8 px.
+ * O original usa GL_POINTS; aqui cada ponto é um quad 1x1 para continuar
+ * cheio quando a janela é maior que 640x480. A cor vem do glColor corrente. */
 static void svcText(float x, float y, const char* s)
 {
-    Font_DrawText(x, y, s);
+    /* Font_DrawText(x, y, s); */   /* Prex3: font.tga (não existe no Zero) */
+    glDisable(GL_TEXTURE_2D);
+    glBegin(GL_QUADS);
+    for (; *s; s++, x += 8.0f) {
+        unsigned char c = (unsigned char)*s;
+        if (c >= 128) continue;
+        for (int row = 0; row < 16; row++) {
+            unsigned char bits = k_zeroSetupFont[c][row];
+            for (int col = 0; col < 8; col++) {
+                if (!(bits & (0x80 >> col))) continue;
+                float px = x + (float)col, py = y + 16.0f - (float)row;
+                glVertex2f(px, py - 1.0f); glVertex2f(px + 1.0f, py - 1.0f);
+                glVertex2f(px + 1.0f, py); glVertex2f(px, py);
+            }
+        }
+    }
+    glEnd();
 }
 
 static void svcColor(const float* c)
@@ -390,7 +413,7 @@ static const char* SVC_LANG_NAMES[4]   = { "KOREAN", "ENGLISH", "PORTUGUESE", "S
 static void svcGameOptionReset(void)
 {
     g_game.optionDifficulty = 1;    /* NORMAL          */
-    g_game.optionToggle1    = 1;    /* STAGE BREAK on  */
+    g_game.optionToggle1    = 2;    /* STAGE BREAK: 2 STAGE (Zero 0x8059ed0) */
     g_game.optionToggle2    = 0;    /* SHOW HELP off   */
     g_game.svcGameMode      = 0;    /* NORMAL          */
     g_game.svcDemoSound     = 0;
@@ -468,7 +491,7 @@ static void svcRenderGameOption(void)
             break;
         case 2:
             g_game.optionToggle1++;
-            if (g_game.optionToggle1 > 4) g_game.optionToggle1 = 0;
+            if (g_game.optionToggle1 > 10) g_game.optionToggle1 = 0;   /* Zero: OFF, 1..10 STAGE (SETUP_VALUE_*_STAGE); era > 4 */
             break;
         case 3:
             g_game.svcLangOption++;

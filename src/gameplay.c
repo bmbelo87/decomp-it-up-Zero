@@ -479,6 +479,41 @@ static double getRowAtTimeFloat(double t)
     return (double)g_chart->rowCount - 1;
 }
 
+/* Delay de bloco (piu 0x8086170 / 0x80863d0 / carga 0x80935xx):
+ *   flag (+100) == 1 e delay > 0 -> STOP: a posição não avança por delay x 10 ms
+ *                                   (aqui: getRowAtTimeFloat fica na 1ª linha do bloco);
+ *   flag == 0 (ou delay < 0)     -> o delay vira distância no scroll (delay*10 * BPM/1000
+ *                                   batidas): as setas seguem andando e abre um vão.
+ * Devolve o vão em linhas visuais (unidade de g_visualRow = divisão do bloco 0). */
+static double zeroDelayGapRows(int s)
+{
+    if (!g_chart || s < 0 || s >= (int)g_chart->segmentCount) return 0.0;
+    int32_t d = g_chart->segments[s].delay;
+    if (d == 0) return 0.0;
+    if (g_chart->segments[s].stopFlag != 0 && d > 0) return 0.0;   /* Stop (ou lixo: sem vão) */
+    double beats = (d / 100.0) * (double)g_chart->segments[s].bpm / 60.0;
+    return beats * (double)(g_baseBeatSplit > 0 ? g_baseBeatSplit : 4);
+}
+
+/* Posição visual durante o delay de um bloco com vão: anda de (início - vão) até o
+ * início do bloco. Fora disso devolve 'fallback' (interpolação normal). */
+static double zeroVisualScrollInDelay(double t, double fallback)
+{
+    if (!g_chart || !g_visualRow) return fallback;
+    double accum = 0;
+    for (int s = 0; s < (int)g_chart->segmentCount; s++) {
+        double segDelay = getSegmentDelay(s);
+        if (segDelay > 0 && t >= accum && t < accum + segDelay) {
+            double gap = zeroDelayGapRows(s);
+            int rs = (int)g_chart->segments[s].rowStart;
+            if (gap <= 0 || rs >= g_visualRowCount) return fallback;
+            return g_visualRow[rs] - gap + gap * ((t - accum) / segDelay);
+        }
+        accum += g_chart->segments[s].rowCount * getSegmentSpr(s) + segDelay;
+    }
+    return fallback;
+}
+
 static NoteHit g_noteHits[2][MAX_PANELS][2048];
 static int g_noteHitCount[2][MAX_PANELS];
 static int g_nextNoteRow[2][MAX_PANELS];
@@ -659,6 +694,98 @@ static int sprTileCount(int startIdx) {
     return c;
 }
 
+/* Tempo (s) da linha ri de um chart qualquer — mesma conta de getRowTime(). */
+static bool g_zeroMerged;   /* chart do P2 já mesclado no half2 (pula a duplicação 2P) */
+
+static double chartRowTime(const StepChart* c, int ri)
+{
+    for (int s = (int)c->segmentCount - 1; s >= 0; s--) {
+        if (ri < (int)c->segments[s].rowStart) continue;
+        double accum = 0;
+        for (int ps = 0; ps <= s; ps++) {
+            double spr = 60.0 / ((double)c->segments[ps].bpm * (double)c->segments[ps].beatSplit);
+            accum += c->segments[ps].delay / 100.0;
+            if (ps < s) accum += c->segments[ps].rowCount * spr;
+            else        accum += (ri - (int)c->segments[s].rowStart) * spr;
+        }
+        return accum;
+    }
+    return 0.0;
+}
+
+/* Encaixa as notas do half1 de src no half <dstHalf> de dst, linha do mesmo tempo
+ * (±1 ms). dry = só conta. Devolve quantas linhas com nota ficaram sem lugar. */
+static int zeroMapChart(StepChart* dst, const StepChart* src, int dstHalf, bool dry)
+{
+    int lost = 0, j = 0;
+    for (uint32_t ri = 0; ri < src->rowCount; ri++) {
+        const uint8_t* s = (const uint8_t*)&src->rows[ri].half1;
+        bool any = false;
+        for (int k = 0; k < 5; k++) if (s[k] && s[k] != NT_HOLD_B) any = true;
+        if (!any) continue;
+        double t = chartRowTime(src, (int)ri);
+        while (j + 1 < (int)dst->rowCount && chartRowTime(dst, j + 1) <= t + 0.001) j++;
+        if (fabs(chartRowTime(dst, j) - t) > 0.001) { lost++; continue; }
+        if (dry) continue;
+        uint8_t* d = (uint8_t*)(dstHalf ? &dst->rows[j].half2 : &dst->rows[j].half1);
+        for (int k = 0; k < 5; k++) if (s[k] && s[k] != NT_HOLD_B) d[k] = s[k];
+    }
+    return lost;
+}
+
+/* corpos de long entre cabeça e cauda (mesma regra de stepFillHolds) */
+static void zeroFillHolds(StepChart* c, int half)
+{
+    for (int k = 0; k < 5; k++) {
+        for (uint32_t ri = 0; ri < c->rowCount; ri++) {
+            #define ZH(r) ((uint8_t*)(half ? &c->rows[r].half2 : &c->rows[r].half1))[k]
+            if (ZH(ri) != NT_HOLD_H) continue;
+            uint32_t t = ri + 1;
+            while (t < c->rowCount && ZH(t) != NT_HOLD_T && ZH(t) != NT_HOLD_H) t++;
+            if (t >= c->rowCount || ZH(t) != NT_HOLD_T) continue;
+            for (uint32_t q = ri + 1; q < t; q++) if (!ZH(q)) ZH(q) = NT_HOLD_B;
+            ri = t;
+            #undef ZH
+        }
+    }
+}
+
+/* Zero 2P com modos diferentes (cada jogador tem o próprio CStep no piu): o motor
+ * tem um g_chart só e lê o P2 de half2. A base passa a ser o chart cuja grade
+ * contém a do outro (ex.: CRAZY com divisão mais fina que NORMAL) e o outro
+ * jogador é encaixado nela pelo tempo de cada linha — nada se perde. Se nenhuma
+ * direção for exata, fica a que perde menos (contada no log). */
+static void zeroMergeP2Chart(const char* modeNameP2)
+{
+    int idx = Step_SelectChart(modeNameP2, -1);
+    if (idx < 0 || idx >= g_playSong.chartCount || idx == g_chartIdx) return;
+    StepChart* c1 = g_chart;
+    StepChart* c2 = &g_playSong.charts[idx];
+    if (!c2->rows || c2->rowCount == 0) { Log_Print("GP: 2P chart '%s' vazio\n", modeNameP2); return; }
+
+    int lostOn1 = zeroMapChart(c1, c2, 1, true);   /* base P1, P2 encaixado */
+    int lostOn2 = zeroMapChart(c2, c1, 0, true);   /* base P2, P1 encaixado */
+    bool baseP2 = lostOn2 < lostOn1;
+    if (!baseP2) {
+        for (uint32_t ri = 0; ri < c1->rowCount; ri++) memset(&c1->rows[ri].half2, 0, sizeof(StepHalf));
+        zeroMapChart(c1, c2, 1, false);
+        zeroFillHolds(c1, 1);
+    } else {
+        /* o P2 fica no half2 do próprio chart; o P1 é encaixado no half1 */
+        for (uint32_t ri = 0; ri < c2->rowCount; ri++) {
+            c2->rows[ri].half2 = c2->rows[ri].half1;
+            memset(&c2->rows[ri].half1, 0, sizeof(StepHalf));
+        }
+        zeroMapChart(c2, c1, 0, false);
+        zeroFillHolds(c2, 0);
+        /* troca a base; loadChartForSong calcula os derivados a partir dela */
+        g_chartIdx = idx;
+        g_chart = c2;
+    }
+    Log_Print("GP: 2P — P2 joga '%s' (chart %d); base = %s, linhas sem lugar = %d\n",
+              modeNameP2, idx, baseP2 ? "P2" : "P1", baseP2 ? lostOn2 : lostOn1);
+}
+
 static bool loadChartForSong(int songId, int diffTier, const char* modeName)
 {
     g_songLoaded = false;
@@ -684,6 +811,15 @@ static bool loadChartForSong(int songId, int diffTier, const char* modeName)
     }
 
     g_chart = &g_playSong.charts[g_chartIdx];
+    /* Zero 2P com modos diferentes: mescla ANTES dos derivados (posições visuais,
+     * tempo total, notas) para que tudo saia da base escolhida pela mescla. */
+    g_zeroMerged = false;
+    if (g_game.activePlayerMask == 0x3 && g_game.selectedModeIndexP2 >= 0 &&
+        g_game.selectedModeIndexP2 < g_game.songDB.modeCount &&
+        g_game.selectedModeIndexP2 != g_game.selectedModeIndex) {
+        zeroMergeP2Chart(g_game.songDB.modes[g_game.selectedModeIndexP2].name);
+        g_zeroMerged = true;
+    }
     g_songTime = 0.0;
     g_maxSongTime = 0.0;
     g_stagnantFrames = 0;
@@ -750,6 +886,7 @@ static bool loadChartForSong(int songId, int diffTier, const char* modeName)
         double vRow = 0;
         for (int s = 0; s < g_chart->segmentCount; s++) {
             double beatRatio = (double)g_baseBeatSplit / (double)g_chart->segments[s].beatSplit;
+            vRow += zeroDelayGapRows(s);   /* delay sem Stop = vão no scroll */
             for (uint32_t r = g_chart->segments[s].rowStart; r < g_chart->segments[s].rowStart + g_chart->segments[s].rowCount; r++) {
                 if ((int)r < g_visualRowCount) g_visualRow[r] = vRow;
                 vRow += beatRatio;
@@ -1342,7 +1479,11 @@ static void zeroJudge(int p)
             if (!v || (g_zHit[p][ri] & (1u << pan))) continue;
             missed = true;
             g_zHit[p][ri] |= (uint16_t)(1u << pan);
-            if (ZJ_ISHOLD(v)) { g_holdRows[p][pan] = -1; ZJ_CLR(ri, pan); }
+            /* MISS em parte de long: só solta o hold. Apagar a nota (ZJ_CLR) tirava a
+             * cabeça/corpo da linha e o long inteiro sumia; marcado em g_zHit ele segue
+             * subindo como a seta comum perdida.
+             * if (ZJ_ISHOLD(v)) { g_holdRows[p][pan] = -1; ZJ_CLR(ri, pan); } */
+            if (ZJ_ISHOLD(v)) g_holdRows[p][pan] = -1;
         }
         if (missed) applyRowJudgment(p, JT_MISS);
         else if (g_zRowJ[p][ri]) applyRowJudgment(p, (JudgeType)g_zRowJ[p][ri]);
@@ -2062,7 +2203,7 @@ void Gameplay_Start(int songId)
      * NUNCA fazer em DN/HD: esses modos já têm ambos os halves populados pelo chart
      * original — sobrescrever half2 destruiria os dados do pad direito. */
     if (g_game.activePlayerMask == 0x3 && g_songLoaded && g_chart
-        && !isDNMode() && !isHDMode()) {
+        && !isDNMode() && !isHDMode() && !g_zeroMerged) {
         for (int ri = 0; ri < (int)g_chart->rowCount; ri++)
             g_chart->rows[ri].half2 = g_chart->rows[ri].half1;
         Log_Print("GP: 2P single — duplicated half1 -> half2 (%d rows)\n", g_chart->rowCount);
@@ -2331,6 +2472,17 @@ void Gameplay_Update(float dt)
         int stageIdx = 3 - g_game.stageCount;
         if (stageIdx < 0) stageIdx = 0;
         bool lifeFailActive = (opt != 0) && ((opt - 1) <= stageIdx) && (stageIdx != 0);
+        bool zeroRule = g_zeroSkinArrows;
+        if (zeroRule) {
+            /* Zero (piu 0x8083783..0x8083f74): setup +0xed8 (STAGE BREAK, padrão 2 em 0x8059ed0).
+             * 0 = OFF; N = só a partir do estágio N: quebra se estágio(0-based, [+8]) >= N-1.
+             * Aqui só a vida (0x8090640(+0x1fc) < 1, os dois em 2P); a regra de
+             * missCombo > 50 continua valendo abaixo. Loading já decrementou: 1º estágio = stageCount 2. */
+            int zStage = g_game.isBonusSong ? 3 : 2 - g_game.stageCount;
+            if (zStage < 0) zStage = 0;
+            stageIdx = zStage;
+            lifeFailActive = (opt != 0) && (zStage >= opt - 1);
+        }
 
         if (lifeFailActive) {
             if (twoP) {
@@ -2349,6 +2501,8 @@ void Gameplay_Update(float dt)
             }
         }
 
+        /* missCombo > 50 vale sempre, inclusive com STAGE BREAK OFF (confirmado pelo
+         * usuário no Zero; o bloco 0x8083783 só cobre a vida). */
         if (!sbTrigger) {
             if (twoP) {
                 if (g_game.stats.missCombo[0] > STAGE_BREAK_MISSES && g_game.stats.missCombo[1] > STAGE_BREAK_MISSES) {
@@ -2716,6 +2870,7 @@ void Gameplay_Render(void)
         visualScrollRow = g_visualRow[vr];
         if (vr + 1 < g_visualRowCount)
             visualScrollRow += (g_visualRow[vr + 1] - g_visualRow[vr]) * frac;
+        visualScrollRow = zeroVisualScrollInDelay(g_songTime, visualScrollRow);
     }
     float currentPixelsPerSec = (float)(pixelsPerRow / currentSpr);
 

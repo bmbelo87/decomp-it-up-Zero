@@ -202,6 +202,7 @@ void Game_Init(HINSTANCE hInstance) {
     g_game.cmdSpeedMult[0] = 1;    /* Command P1: velocidade padrão x1 */
     g_game.cmdSpeedMult[1] = 1;    /* Command P2: velocidade padrão x1 */
     g_game.activePlayerMask = 0x1; /* P1 ativo por padrão */
+    g_game.selectedModeIndexP2 = -1;
     g_game.isBattleMode = false;   /* BATTLE só ativo quando selecionado no song_select */
     Render_SetGlobalColor(0, 0, 0, 0);
     GetCurrentDirectoryA(MAX_PATH, g_game.currentDirectory);

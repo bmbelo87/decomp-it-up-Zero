@@ -806,11 +806,13 @@ static void startGame(void) {
         rv[p] = (m & ZM_RV) != 0;
     }
     static const char* const k_arg[5] = { "-n", "-h", "-c", "-d", "-nm" };
-    Log_Print("ZSELECT: RUN %X %s %s\n", (unsigned)e->id, k_arg[s_diff[0]],
+    /* só o P2 dentro: o modo é o dele (antes ia sempre o s_diff[0]) */
+    int d0 = (s_joined & 1) ? s_diff[0] : s_diff[1];
+    Log_Print("ZSELECT: RUN %X %s %s\n", (unsigned)e->id, k_arg[d0],
               twoPlayers() ? k_arg[s_diff[1]] : " ");
     Movie_Close();
     BGM_Stop();
-    if (!ExSelect_StartZero((int)e->id, s_diff[0], s_joined, speed, rv))
+    if (!ExSelect_StartZero((int)e->id, d0, s_diff[1], s_joined, speed, rv))
         s_started = false;
 }
 

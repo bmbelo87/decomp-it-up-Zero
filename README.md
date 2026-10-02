@@ -31,6 +31,10 @@ counterparts are kept in the tree, disabled (commented out or left out of the bu
 | Gameplay: step effect (`arrowp`), explosion (`arrowf`), sparks   | ✅      |
 | Song backgrounds: `BGA\%X.DAT` → `BGA\%X.MOV` → `BGA\000.MOV`    | ✅      |
 | Dance Grade: `GRADE.MOV`, `SCOREFONT`, letters from `GRADE.DAT`  | ✅      |
+| 2 players with different modes (e.g. P1 NORMAL, P2 CRAZY)        | ✅      |
+| Stop n' Go / freeze (block delay flag `+100` in `.STX`)          | ✅      |
+| Stage Break: life from stage N (setup, default 2) + 51 MISS rule | ✅      |
+| Service menu text with the 8x16 font embedded in `piu`           | ✅      |
 | Stage Break (`STAGEBREAK.MOV` / `.WAV`)                          | ✅      |
 | EASY Station (CSelectEz) / MISSION Station (CSelectMission)      | ❌ (falls back to ARCADE) |
 | Next Stage / Game Over / Continue / Reward in Zero style         | ⚙️ Still the Exceed 2 versions |
@@ -149,6 +153,11 @@ included — you must provide your own copy of the Pump It Up Zero data files.
   `skinN_l1` on top; a held long note starts from the middle of the step zone.
 - Judgment is per row (`0x808a760`): holding the pad hits long-note parts inside the PERFECT
   window; a row is judged once all its notes are hit; one MISS per row.
+- Block delay (`.STX` block header `+0xC`, 10 ms units) and flag `+100` (`0x80863d0`):
+  flag 1 = **Stop** (arrows freeze for delay x 10 ms); flag 0 = the delay becomes a gap in
+  the scroll. Other flag values are editor garbage and only 0/1 are tested by `piu`.
+- 2 players with different modes: the chart with the finer grid is the base and the other
+  player's chart is fitted into it by row time (each player keeps their own steps).
 
 ### Scoring and grade
 

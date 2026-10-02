@@ -283,7 +283,7 @@ typedef struct {
     int patFlags;
 } BGALayer;
 
-#define MAX_BGA_SCENES 32
+#define MAX_BGA_SCENES 128 /* ICONDD.bga tem 58 cenas (era 32: as do 1P eram cortadas) */
 
 typedef struct {
     char name[64];
@@ -389,6 +389,7 @@ typedef struct {
     StepSong currentSong;
     int selectedSongIndex;
     int selectedModeIndex;
+    int selectedModeIndexP2;   /* Zero 2P: modo do P2 quando difere do P1 (-1 = o mesmo) */
     int selectedDifficulty;
     int songSelectScroll;
     int songSelectHighlighted;
@@ -708,7 +709,7 @@ void Station_Render(void);
 extern bool g_exceedSongIds;
 const char* Song_IdStr(int id);
 int Song_DataId(int id);            /* Zero: a própria (STX/TITLE); ver Song_FindFile para AUD/MOV/DAT */
-bool ExSelect_StartZero(int id, int diff, unsigned joined, const int speed[2], const bool rv[2]);
+bool ExSelect_StartZero(int id, int diff, int diffP2, unsigned joined, const int speed[2], const bool rv[2]);
 int  Zero_SkinIndex(void);
 void Zero_SetSkinIndex(int n);       /* console /skin */           /* zero_select.c: skin de notas (SKIN00..07) */
 void ZeroSelect_Enter(void);          /* zero_select.c — CSelect do Zero */
